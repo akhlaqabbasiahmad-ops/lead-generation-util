@@ -19,7 +19,12 @@ except ImportError as e:
     SCRAPERS_AVAILABLE = False
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+
+# Production-ready configuration
+import os
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'change-this-secret-key-in-production')
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False  # Disable pretty printing in production
 
 # Store scraping status
 scraping_status = {
@@ -185,9 +190,17 @@ if __name__ == '__main__':
     if not os.path.exists('templates'):
         os.makedirs('templates')
     
+    # Production settings
+    import os
+    DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    HOST = os.getenv('FLASK_HOST', '127.0.0.1')  # Gunicorn will handle external access
+    PORT = int(os.getenv('FLASK_PORT', 5000))
+    
     print("Starting Google Business Scraper Web Application...")
-    print("Access the application at: http://localhost:5000")
+    print(f"Debug mode: {DEBUG}")
+    print(f"Access the application at: http://{HOST}:{PORT}")
     print("Press Ctrl+C to stop the server")
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # In production, Gunicorn handles the app, so this only runs in development
+    app.run(debug=DEBUG, host=HOST, port=PORT)
 

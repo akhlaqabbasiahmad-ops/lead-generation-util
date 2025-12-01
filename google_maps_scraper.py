@@ -39,16 +39,38 @@ class GoogleMapsScraper:
         self.setup_driver(headless)
     
     def setup_driver(self, headless: bool):
-        """Setup Chrome WebDriver with appropriate options."""
+        """Setup Chrome WebDriver with appropriate options for production."""
         chrome_options = Options()
-        if headless:
-            chrome_options.add_argument('--headless')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
+        
+        # Production-ready Chrome options for EC2/server environment
+        # Always use headless mode on server (EC2 doesn't have display)
+        chrome_options.add_argument('--headless=new')  # Use new headless mode
+        chrome_options.add_argument('--no-sandbox')  # Required for Docker/EC2
+        chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
+        chrome_options.add_argument('--disable-gpu')  # Required for headless
+        chrome_options.add_argument('--disable-software-rasterizer')
+        chrome_options.add_argument('--disable-extensions')
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-features=TranslateUI')
+        chrome_options.add_argument('--disable-ipc-flooding-protection')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--remote-debugging-port=9222')
+        chrome_options.add_argument('--disable-setuid-sandbox')
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--allow-running-insecure-content')
+        chrome_options.add_argument('--disable-infobars')
+        chrome_options.add_argument('--disable-notifications')
+        chrome_options.add_argument('--disable-popup-blocking')
+        
+        # Anti-detection options
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # Use Linux user-agent for server environment
+        chrome_options.add_argument('user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
         try:
             if WEBDRIVER_MANAGER_AVAILABLE:
@@ -122,6 +144,13 @@ class GoogleMapsScraper:
                 "website": None,
                 "category": None,
                 "business_hours": None,
+                "facebook": None,
+                "instagram": None,
+                "linkedin": None,
+                "twitter": None,
+                "youtube": None,
+                "tiktok": None,
+                "social_media_links": None,  # Combined string of all social links
                 "lead_score": 0,
                 "lead_status": "New",
                 "lead_source": "Google Maps"
@@ -447,6 +476,32 @@ class GoogleMapsScraper:
             except Exception as e:
                 print(f"Error extracting business hours: {str(e)}")
             
+            # Extract social media links
+            try:
+                social_links = self._extract_social_media_links(page_source)
+                info.update(social_links)
+                
+                # Create combined social media links string
+                social_list = []
+                if info.get("facebook"):
+                    social_list.append(f"Facebook: {info['facebook']}")
+                if info.get("instagram"):
+                    social_list.append(f"Instagram: {info['instagram']}")
+                if info.get("linkedin"):
+                    social_list.append(f"LinkedIn: {info['linkedin']}")
+                if info.get("twitter"):
+                    social_list.append(f"Twitter: {info['twitter']}")
+                if info.get("youtube"):
+                    social_list.append(f"YouTube: {info['youtube']}")
+                if info.get("tiktok"):
+                    social_list.append(f"TikTok: {info['tiktok']}")
+                
+                if social_list:
+                    info["social_media_links"] = " | ".join(social_list)
+                    
+            except Exception as e:
+                print(f"Error extracting social media links: {str(e)}")
+            
             # Calculate lead score based on data completeness
             lead_score = 0
             if info["name"]:
@@ -463,6 +518,11 @@ class GoogleMapsScraper:
                 lead_score += 10
             if info["category"]:
                 lead_score += 5
+            
+            # Social media presence adds value
+            social_count = sum(1 for key in ["facebook", "instagram", "linkedin", "twitter", "youtube", "tiktok"] if info.get(key))
+            if social_count > 0:
+                lead_score += min(social_count * 2, 10)  # Max 10 points for social media
             
             # Bonus points for high ratings
             if info["rating"]:
@@ -545,6 +605,106 @@ class GoogleMapsScraper:
         """Extract results from the sidebar when multiple results are shown (legacy method)."""
         return self._extract_all_sidebar_results()
     
+    def _extract_social_media_links(self, page_source: str) -> Dict[str, Optional[str]]:
+        """
+        Extract social media links from page source and visible links.
+        
+        Args:
+            page_source: HTML page source to search
+            
+        Returns:
+            Dictionary with social media links (facebook, instagram, linkedin, twitter, youtube, tiktok)
+        """
+        social_links = {
+            "facebook": None,
+            "instagram": None,
+            "linkedin": None,
+            "twitter": None,
+            "youtube": None,
+            "tiktok": None
+        }
+        
+        try:
+            # Find all links on the page
+            all_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href]")
+            
+            # Patterns for social media URLs
+            patterns = {
+                "facebook": [
+                    r'https?://(?:www\.)?(?:facebook\.com|fb\.com)/[^\s<>"{}|\\^`\[\]]+',
+                    r'https?://(?:www\.)?facebook\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'fb\.com/[^\s<>"{}|\\^`\[\]]+'
+                ],
+                "instagram": [
+                    r'https?://(?:www\.)?instagram\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'instagram\.com/[^\s<>"{}|\\^`\[\]]+'
+                ],
+                "linkedin": [
+                    r'https?://(?:www\.)?linkedin\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'linkedin\.com/[^\s<>"{}|\\^`\[\]]+'
+                ],
+                "twitter": [
+                    r'https?://(?:www\.)?(?:twitter\.com|x\.com)/[^\s<>"{}|\\^`\[\]]+',
+                    r'twitter\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'x\.com/[^\s<>"{}|\\^`\[\]]+'
+                ],
+                "youtube": [
+                    r'https?://(?:www\.)?(?:youtube\.com|youtu\.be)/[^\s<>"{}|\\^`\[\]]+',
+                    r'youtube\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'youtu\.be/[^\s<>"{}|\\^`\[\]]+'
+                ],
+                "tiktok": [
+                    r'https?://(?:www\.)?tiktok\.com/[^\s<>"{}|\\^`\[\]]+',
+                    r'tiktok\.com/[^\s<>"{}|\\^`\[\]]+'
+                ]
+            }
+            
+            # Extract from visible links
+            for link in all_links:
+                try:
+                    href = link.get_attribute("href")
+                    if not href:
+                        continue
+                    
+                    href_lower = href.lower()
+                    
+                    # Check each social media platform
+                    for platform, platform_patterns in patterns.items():
+                        if not social_links[platform]:  # Only get first match
+                            for pattern in platform_patterns:
+                                match = re.search(pattern, href_lower, re.IGNORECASE)
+                                if match:
+                                    # Clean up the URL
+                                    url = match.group(0)
+                                    # Remove query parameters and fragments for cleaner URLs
+                                    url = url.split('?')[0].split('#')[0]
+                                    # Ensure it starts with http
+                                    if not url.startswith('http'):
+                                        url = 'https://' + url
+                                    social_links[platform] = url
+                                    break
+                except Exception:
+                    continue
+            
+            # Also search in page source for any missed links
+            for platform, platform_patterns in patterns.items():
+                if not social_links[platform]:  # Only if not found in visible links
+                    for pattern in platform_patterns:
+                        matches = re.findall(pattern, page_source, re.IGNORECASE)
+                        if matches:
+                            url = matches[0]
+                            # Clean up the URL
+                            url = url.split('?')[0].split('#')[0]
+                            if not url.startswith('http'):
+                                url = 'https://' + url
+                            social_links[platform] = url
+                            break
+            
+        except Exception as e:
+            print(f"Error in _extract_social_media_links: {str(e)}")
+        
+        return social_links
+    
     def close(self):
         """Close the browser driver."""
         if self.driver:
@@ -572,7 +732,7 @@ def calculate_lead_quality(results: List[Dict[str, Optional[str]]]) -> List[Dict
     for result in results:
         # Lead score is already calculated, but we can add more metrics
         completeness = 0
-        total_fields = 7  # name, address, phone, email, website, rating, category
+        total_fields = 13  # name, address, phone, email, website, rating, category, facebook, instagram, linkedin, twitter, youtube, tiktok
         
         if result.get('name'):
             completeness += 1
@@ -587,6 +747,18 @@ def calculate_lead_quality(results: List[Dict[str, Optional[str]]]) -> List[Dict
         if result.get('rating'):
             completeness += 1
         if result.get('category'):
+            completeness += 1
+        if result.get('facebook'):
+            completeness += 1
+        if result.get('instagram'):
+            completeness += 1
+        if result.get('linkedin'):
+            completeness += 1
+        if result.get('twitter'):
+            completeness += 1
+        if result.get('youtube'):
+            completeness += 1
+        if result.get('tiktok'):
             completeness += 1
         
         result['data_completeness'] = f"{(completeness/total_fields)*100:.1f}%"
@@ -619,6 +791,7 @@ def export_leads_to_csv(results: List[Dict[str, Optional[str]]], filename: str =
     fieldnames = [
         "Company Name", "Address", "Phone", "Email", "Website",
         "Category", "Rating", "Reviews Count", "Business Hours",
+        "Facebook", "Instagram", "LinkedIn", "Twitter", "YouTube", "TikTok", "Social Media Links",
         "Lead Score", "Lead Status", "Lead Source", "Data Completeness"
     ]
     
@@ -638,6 +811,13 @@ def export_leads_to_csv(results: List[Dict[str, Optional[str]]], filename: str =
                 "Rating": result.get('rating', ''),
                 "Reviews Count": result.get('reviews_count', ''),
                 "Business Hours": result.get('business_hours', ''),
+                "Facebook": result.get('facebook', ''),
+                "Instagram": result.get('instagram', ''),
+                "LinkedIn": result.get('linkedin', ''),
+                "Twitter": result.get('twitter', ''),
+                "YouTube": result.get('youtube', ''),
+                "TikTok": result.get('tiktok', ''),
+                "Social Media Links": result.get('social_media_links', ''),
                 "Lead Score": result.get('lead_score', 0),
                 "Lead Status": result.get('lead_status', 'New'),
                 "Lead Source": result.get('lead_source', 'Google Maps'),
@@ -681,8 +861,9 @@ def export_to_excel(results: List[Dict[str, Optional[str]]], filename: str = "go
     
     # Define headers (including lead generation fields)
     headers = ["Name", "Address", "Phone", "Email", "Website", "Category", 
-               "Rating", "Reviews Count", "Business Hours", "Lead Score", 
-               "Lead Status", "Lead Source", "Data Completeness"]
+               "Rating", "Reviews Count", "Business Hours", 
+               "Facebook", "Instagram", "LinkedIn", "Twitter", "YouTube", "TikTok", "Social Media Links",
+               "Lead Score", "Lead Status", "Lead Source", "Data Completeness"]
     
     # Write headers
     for col_num, header in enumerate(headers, 1):
@@ -702,10 +883,17 @@ def export_to_excel(results: List[Dict[str, Optional[str]]], filename: str = "go
         ws.cell(row=row_num, column=7, value=result.get('rating', ''))
         ws.cell(row=row_num, column=8, value=result.get('reviews_count', ''))
         ws.cell(row=row_num, column=9, value=result.get('business_hours', ''))
-        ws.cell(row=row_num, column=10, value=result.get('lead_score', 0))
-        ws.cell(row=row_num, column=11, value=result.get('lead_status', 'New'))
-        ws.cell(row=row_num, column=12, value=result.get('lead_source', 'Google Maps'))
-        ws.cell(row=row_num, column=13, value=result.get('data_completeness', '0%'))
+        ws.cell(row=row_num, column=10, value=result.get('facebook', ''))
+        ws.cell(row=row_num, column=11, value=result.get('instagram', ''))
+        ws.cell(row=row_num, column=12, value=result.get('linkedin', ''))
+        ws.cell(row=row_num, column=13, value=result.get('twitter', ''))
+        ws.cell(row=row_num, column=14, value=result.get('youtube', ''))
+        ws.cell(row=row_num, column=15, value=result.get('tiktok', ''))
+        ws.cell(row=row_num, column=16, value=result.get('social_media_links', ''))
+        ws.cell(row=row_num, column=17, value=result.get('lead_score', 0))
+        ws.cell(row=row_num, column=18, value=result.get('lead_status', 'New'))
+        ws.cell(row=row_num, column=19, value=result.get('lead_source', 'Google Maps'))
+        ws.cell(row=row_num, column=20, value=result.get('data_completeness', '0%'))
     
     # Auto-adjust column widths
     for col_num, header in enumerate(headers, 1):
@@ -795,6 +983,7 @@ if __name__ == "__main__":
         category = result.get('category', 'N/A') or 'N/A'
         lead_score = result.get('lead_score', 0)
         lead_status = result.get('lead_status', 'N/A') or 'N/A'
+        social_links = result.get('social_media_links', 'N/A') or 'N/A'
         
         print(f"  Name: {name}")
         print(f"  Address: {address}")
@@ -804,6 +993,8 @@ if __name__ == "__main__":
         print(f"  Category: {category}")
         print(f"  Rating: {rating}")
         print(f"  Reviews: {reviews}")
+        if social_links != 'N/A':
+            print(f"  Social Media: {social_links}")
         print(f"  Lead Score: {lead_score}/100")
         print(f"  Lead Status: {lead_status}")
 
