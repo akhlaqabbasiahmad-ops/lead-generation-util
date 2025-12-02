@@ -9,9 +9,11 @@ import threading
 import os
 import sys
 import io
+from datetime import datetime
 
 # Import scrapers (will be imported after tkinter is initialized)
 SCRAPERS_AVAILABLE = False
+CLAY_FEATURES_AVAILABLE = False
 try:
     from google_maps_scraper import scrape_business_info
     from google_web_scraper import search_businesses_web
@@ -21,19 +23,29 @@ except ImportError as e:
     print(f"Import error: {e}")
     SCRAPERS_AVAILABLE = False
 
+try:
+    from clay_integration import IntegratedScraper, export_enriched_leads_to_excel
+    CLAY_FEATURES_AVAILABLE = True
+except ImportError as e:
+    print(f"Clay features import error: {e}")
+    CLAY_FEATURES_AVAILABLE = False
+
 # License validation removed - app is now free to use
 
 
 class GoogleScraperApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Google Business Scraper - Lead Generation Tool")
-        self.root.geometry("900x700")
+        self.root.title("Business Scraper & Enrichment Platform - Clay-like GTM Tool")
+        self.root.geometry("1100x800")
         self.root.resizable(True, True)
         
         # Variables
         self.is_running = False
         self.scraper_thread = None
+        self.integrated_scraper = None
+        if CLAY_FEATURES_AVAILABLE:
+            self.integrated_scraper = IntegratedScraper()
         
         # Fix Windows console encoding (only if buffer exists)
         if sys.platform == 'win32':
@@ -49,17 +61,38 @@ class GoogleScraperApp:
         self.create_widgets()
         
     def create_widgets(self):
-        # Main container
-        main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Create notebook for tabs
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Title
-        title_frame = ttk.Frame(main_frame)
-        title_frame.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky=(tk.W, tk.E))
+        # Tab 1: Scraping
+        self.scraping_frame = ttk.Frame(self.notebook, padding="10")
+        self.notebook.add(self.scraping_frame, text="🔍 Scraping")
+        self.create_scraping_tab()
         
-        title_label = ttk.Label(title_frame, text="Google Business Scraper", 
-                                font=("Arial", 16, "bold"))
-        title_label.pack(side=tk.LEFT)
+        # Tab 2: Enrichment (Clay-like)
+        if CLAY_FEATURES_AVAILABLE:
+            self.enrichment_frame = ttk.Frame(self.notebook, padding="10")
+            self.notebook.add(self.enrichment_frame, text="✨ Enrichment")
+            self.create_enrichment_tab()
+            
+            # Tab 3: Workflows
+            self.workflows_frame = ttk.Frame(self.notebook, padding="10")
+            self.notebook.add(self.workflows_frame, text="⚙️ Workflows")
+            self.create_workflows_tab()
+            
+            # Tab 4: Audiences
+            self.audiences_frame = ttk.Frame(self.notebook, padding="10")
+            self.notebook.add(self.audiences_frame, text="👥 Audiences")
+            self.create_audiences_tab()
+        
+        # Configure root grid
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+    
+    def create_scraping_tab(self):
+        """Create the scraping tab (existing functionality)."""
+        main_frame = self.scraping_frame
         
         # Scraper type selection
         scraper_frame = ttk.LabelFrame(main_frame, text="Scraper Type", padding="10")
@@ -179,13 +212,151 @@ class GoogleScraperApp:
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, width=80)
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
-        # Configure grid weights
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
+        # Configure grid weights for scraping tab
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(8, weight=1)
         params_frame.columnconfigure(1, weight=1)
         options_frame.columnconfigure(1, weight=1)
+    
+    def create_enrichment_tab(self):
+        """Create the enrichment tab (Clay-like features)."""
+        main_frame = self.enrichment_frame
+        
+        # Title
+        title_label = ttk.Label(main_frame, text="Data Enrichment & Waterfall Enrichment", 
+                                font=("Arial", 14, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        
+        # Enrichment input
+        input_frame = ttk.LabelFrame(main_frame, text="Enrichment Input", padding="10")
+        input_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(input_frame, text="Lead Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.enrich_name = ttk.Entry(input_frame, width=40)
+        self.enrich_name.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        
+        ttk.Label(input_frame, text="Location (optional):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.enrich_location = ttk.Entry(input_frame, width=40)
+        self.enrich_location.grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        
+        # Fields to enrich
+        ttk.Label(input_frame, text="Fields to Enrich:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        fields_frame = ttk.Frame(input_frame)
+        fields_frame.grid(row=2, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        
+        self.enrich_email = tk.BooleanVar(value=True)
+        self.enrich_phone = tk.BooleanVar(value=True)
+        self.enrich_website = tk.BooleanVar(value=True)
+        self.enrich_social = tk.BooleanVar(value=True)
+        
+        ttk.Checkbutton(fields_frame, text="Email", variable=self.enrich_email).grid(row=0, column=0, padx=5)
+        ttk.Checkbutton(fields_frame, text="Phone", variable=self.enrich_phone).grid(row=0, column=1, padx=5)
+        ttk.Checkbutton(fields_frame, text="Website", variable=self.enrich_website).grid(row=0, column=2, padx=5)
+        ttk.Checkbutton(fields_frame, text="Social Media", variable=self.enrich_social).grid(row=0, column=3, padx=5)
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Enrich Lead", 
+                  command=self.enrich_single_lead, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Bulk Enrich (from CSV)", 
+                  command=self.bulk_enrich_from_csv, width=20).pack(side=tk.LEFT, padx=5)
+        
+        # Results
+        results_frame = ttk.LabelFrame(main_frame, text="Enrichment Results", padding="10")
+        results_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        self.enrichment_log = scrolledtext.ScrolledText(results_frame, height=20, width=80)
+        self.enrichment_log.pack(fill=tk.BOTH, expand=True)
+        
+        # Configure grid
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        input_frame.columnconfigure(1, weight=1)
+    
+    def create_workflows_tab(self):
+        """Create the workflows tab."""
+        main_frame = self.workflows_frame
+        
+        title_label = ttk.Label(main_frame, text="GTM Workflow Automation", 
+                                font=("Arial", 14, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        
+        # Workflow list
+        list_frame = ttk.LabelFrame(main_frame, text="Workflows", padding="10")
+        list_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        self.workflow_listbox = tk.Listbox(list_frame, height=10)
+        self.workflow_listbox.pack(fill=tk.BOTH, expand=True)
+        
+        # Buttons
+        workflow_buttons = ttk.Frame(main_frame)
+        workflow_buttons.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(workflow_buttons, text="Create Standard Enrichment Workflow", 
+                  command=self.create_standard_workflow).pack(side=tk.LEFT, padx=5)
+        ttk.Button(workflow_buttons, text="Execute Workflow", 
+                  command=self.execute_selected_workflow).pack(side=tk.LEFT, padx=5)
+        
+        # Workflow details
+        details_frame = ttk.LabelFrame(main_frame, text="Workflow Details", padding="10")
+        details_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        self.workflow_details = scrolledtext.ScrolledText(details_frame, height=15, width=80)
+        self.workflow_details.pack(fill=tk.BOTH, expand=True)
+        
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+    
+    def create_audiences_tab(self):
+        """Create the audiences tab."""
+        main_frame = self.audiences_frame
+        
+        title_label = ttk.Label(main_frame, text="Dynamic Audience Builder", 
+                                font=("Arial", 14, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        
+        # Audience criteria
+        criteria_frame = ttk.LabelFrame(main_frame, text="Audience Criteria", padding="10")
+        criteria_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(criteria_frame, text="Audience Name:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.audience_name = ttk.Entry(criteria_frame, width=30)
+        self.audience_name.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        self.audience_name.insert(0, "High Intent Leads")
+        
+        # Criteria
+        ttk.Label(criteria_frame, text="Lead Score >").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.audience_score = ttk.Entry(criteria_frame, width=10)
+        self.audience_score.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+        self.audience_score.insert(0, "60")
+        
+        ttk.Checkbutton(criteria_frame, text="Must have email", 
+                       variable=tk.BooleanVar(value=True)).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        ttk.Checkbutton(criteria_frame, text="Must have phone", 
+                       variable=tk.BooleanVar(value=True)).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # Buttons
+        audience_buttons = ttk.Frame(main_frame)
+        audience_buttons.grid(row=2, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(audience_buttons, text="Create Audience", 
+                  command=self.create_audience).pack(side=tk.LEFT, padx=5)
+        ttk.Button(audience_buttons, text="Match Records", 
+                  command=self.match_audience).pack(side=tk.LEFT, padx=5)
+        
+        # Results
+        results_frame = ttk.LabelFrame(main_frame, text="Audience Results", padding="10")
+        results_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        self.audience_results = scrolledtext.ScrolledText(results_frame, height=20, width=80)
+        self.audience_results.pack(fill=tk.BOTH, expand=True)
+        
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(3, weight=1)
+        criteria_frame.columnconfigure(1, weight=1)
     
     def on_scraper_type_change(self):
         """Show/hide relevant parameter fields based on scraper type."""
@@ -395,6 +566,177 @@ class GoogleScraperApp:
                 os.system(f'xdg-open "{folder}"')
         else:
             messagebox.showwarning("Folder Not Found", f"Folder does not exist: {folder}")
+    
+    # Clay-like enrichment methods
+    def enrich_single_lead(self):
+        """Enrich a single lead using waterfall enrichment."""
+        if not CLAY_FEATURES_AVAILABLE or not self.integrated_scraper:
+            messagebox.showerror("Error", "Enrichment features not available!")
+            return
+        
+        name = self.enrich_name.get().strip()
+        if not name:
+            messagebox.showerror("Error", "Please enter a lead name!")
+            return
+        
+        location = self.enrich_location.get().strip()
+        
+        # Determine fields to enrich
+        fields = []
+        if self.enrich_email.get():
+            fields.append('email')
+        if self.enrich_phone.get():
+            fields.append('phone')
+        if self.enrich_website.get():
+            fields.append('website')
+        if self.enrich_social.get():
+            fields.extend(['facebook_url', 'instagram_url', 'linkedin_url'])
+        
+        self.enrichment_log.delete(1.0, tk.END)
+        self.enrichment_log.insert(tk.END, f"Enriching lead: {name}\n")
+        self.enrichment_log.insert(tk.END, f"Fields to enrich: {', '.join(fields)}\n")
+        self.enrichment_log.insert(tk.END, "-" * 50 + "\n")
+        
+        try:
+            lead = {'name': name}
+            if location:
+                lead['location'] = location
+            
+            enriched = self.integrated_scraper.enrich_lead(lead, fields)
+            
+            self.enrichment_log.insert(tk.END, "\n✓ Enrichment completed!\n")
+            self.enrichment_log.insert(tk.END, "-" * 50 + "\n")
+            self.enrichment_log.insert(tk.END, "Enriched Data:\n")
+            for key, value in enriched.items():
+                if value:
+                    self.enrichment_log.insert(tk.END, f"  {key}: {value}\n")
+            
+            # Export to Excel
+            output_folder = self.output_folder.get().strip() or "excel_results"
+            from clay_integration import export_enriched_leads_to_excel
+            export_enriched_leads_to_excel([enriched], f"enriched_{name.replace(' ', '_')}.xlsx", output_folder)
+            self.enrichment_log.insert(tk.END, f"\n✓ Exported to Excel: {output_folder}\n")
+            
+        except Exception as e:
+            self.enrichment_log.insert(tk.END, f"\n✗ Error: {str(e)}\n")
+            messagebox.showerror("Error", f"Enrichment failed: {str(e)}")
+    
+    def bulk_enrich_from_csv(self):
+        """Bulk enrich leads from CSV file."""
+        if not CLAY_FEATURES_AVAILABLE or not self.integrated_scraper:
+            messagebox.showerror("Error", "Enrichment features not available!")
+            return
+        
+        csv_file = filedialog.askopenfilename(
+            title="Select CSV file",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        
+        if not csv_file:
+            return
+        
+        try:
+            import csv
+            leads = []
+            with open(csv_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get('name') or row.get('Name'):
+                        leads.append(row)
+            
+            if not leads:
+                messagebox.showwarning("No Leads", "No leads found in CSV file!")
+                return
+            
+            self.enrichment_log.delete(1.0, tk.END)
+            self.enrichment_log.insert(tk.END, f"Found {len(leads)} leads in CSV\n")
+            self.enrichment_log.insert(tk.END, "Starting bulk enrichment...\n")
+            self.enrichment_log.insert(tk.END, "-" * 50 + "\n")
+            
+            # Determine fields to enrich
+            fields = []
+            if self.enrich_email.get():
+                fields.append('email')
+            if self.enrich_phone.get():
+                fields.append('phone')
+            if self.enrich_website.get():
+                fields.append('website')
+            if self.enrich_social.get():
+                fields.extend(['facebook_url', 'instagram_url', 'linkedin_url'])
+            
+            enriched_leads = self.integrated_scraper.enrich_bulk(leads, fields)
+            
+            # Export results
+            output_folder = self.output_folder.get().strip() or "excel_results"
+            from clay_integration import export_enriched_leads_to_excel
+            filename = f"bulk_enriched_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            export_enriched_leads_to_excel(enriched_leads, filename, output_folder)
+            
+            self.enrichment_log.insert(tk.END, f"\n✓ Bulk enrichment completed!\n")
+            self.enrichment_log.insert(tk.END, f"✓ Exported {len(enriched_leads)} leads to: {output_folder}/{filename}\n")
+            
+            messagebox.showinfo("Success", f"Bulk enrichment completed!\n\nEnriched {len(enriched_leads)} leads.\n\nSaved to: {output_folder}")
+            
+        except Exception as e:
+            self.enrichment_log.insert(tk.END, f"\n✗ Error: {str(e)}\n")
+            messagebox.showerror("Error", f"Bulk enrichment failed: {str(e)}")
+    
+    def create_standard_workflow(self):
+        """Create a standard enrichment workflow."""
+        if not CLAY_FEATURES_AVAILABLE or not self.integrated_scraper:
+            messagebox.showerror("Error", "Workflow features not available!")
+            return
+        
+        workflow = self.integrated_scraper.create_enrichment_workflow()
+        self.workflow_listbox.insert(tk.END, workflow['name'])
+        self.workflow_details.delete(1.0, tk.END)
+        self.workflow_details.insert(tk.END, f"Workflow: {workflow['name']}\n")
+        self.workflow_details.insert(tk.END, f"Created: {workflow['created_at']}\n")
+        self.workflow_details.insert(tk.END, f"Steps: {len(workflow['steps'])}\n\n")
+        for i, step in enumerate(workflow['steps'], 1):
+            self.workflow_details.insert(tk.END, f"Step {i}: {step.get('type', 'unknown')}\n")
+        
+        messagebox.showinfo("Success", f"Workflow '{workflow['name']}' created!")
+    
+    def execute_selected_workflow(self):
+        """Execute selected workflow."""
+        selection = self.workflow_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a workflow!")
+            return
+        
+        workflow_name = self.workflow_listbox.get(selection[0])
+        messagebox.showinfo("Info", f"Workflow execution would happen here for: {workflow_name}\n\nThis feature requires a lead to process.")
+    
+    def create_audience(self):
+        """Create a new audience."""
+        if not CLAY_FEATURES_AVAILABLE or not self.integrated_scraper:
+            messagebox.showerror("Error", "Audience features not available!")
+            return
+        
+        name = self.audience_name.get().strip()
+        if not name:
+            messagebox.showerror("Error", "Please enter an audience name!")
+            return
+        
+        try:
+            score_threshold = int(self.audience_score.get().strip() or "60")
+            criteria = {
+                'lead_score': {'operator': 'greater_than', 'value': score_threshold}
+            }
+            
+            audience = self.integrated_scraper.platform.build_audience(name, criteria)
+            self.audience_results.delete(1.0, tk.END)
+            self.audience_results.insert(tk.END, f"✓ Audience '{name}' created!\n")
+            self.audience_results.insert(tk.END, f"Criteria: Lead Score > {score_threshold}\n")
+            
+            messagebox.showinfo("Success", f"Audience '{name}' created!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to create audience: {str(e)}")
+    
+    def match_audience(self):
+        """Match records against audience."""
+        messagebox.showinfo("Info", "Audience matching requires leads to match.\n\nLoad leads from CSV or scrape first, then match.")
 
 
 if __name__ == "__main__":

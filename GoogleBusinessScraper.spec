@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('google_maps_scraper.py', '.'), ('google_web_scraper.py', '.'), ('social_media_search_scraper.py', '.')]
+datas = [('google_maps_scraper.py', '.'), ('google_web_scraper.py', '.'), ('social_media_search_scraper.py', '.'), ('clay_like_enrichment.py', '.'), ('clay_integration.py', '.')]
 binaries = []
 hiddenimports = ['selenium', 'webdriver_manager', 'openpyxl', 'tkinter']
 tmp_ret = collect_all('selenium')
