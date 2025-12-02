@@ -15,10 +15,13 @@ SCRAPERS_AVAILABLE = False
 try:
     from google_maps_scraper import scrape_business_info
     from google_web_scraper import search_businesses_web
+    from social_media_search_scraper import SocialMediaSearchScraper, export_social_media_to_excel
     SCRAPERS_AVAILABLE = True
 except ImportError as e:
     print(f"Import error: {e}")
     SCRAPERS_AVAILABLE = False
+
+# License validation removed - app is now free to use
 
 
 class GoogleScraperApp:
@@ -51,9 +54,12 @@ class GoogleScraperApp:
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Title
-        title_label = ttk.Label(main_frame, text="Google Business Scraper", 
+        title_frame = ttk.Frame(main_frame)
+        title_frame.grid(row=0, column=0, columnspan=2, pady=(0, 20), sticky=(tk.W, tk.E))
+        
+        title_label = ttk.Label(title_frame, text="Google Business Scraper", 
                                 font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        title_label.pack(side=tk.LEFT)
         
         # Scraper type selection
         scraper_frame = ttk.LabelFrame(main_frame, text="Scraper Type", padding="10")
@@ -61,22 +67,26 @@ class GoogleScraperApp:
         
         self.scraper_type = tk.StringVar(value="maps")
         ttk.Radiobutton(scraper_frame, text="Google Maps Scraper", 
-                       variable=self.scraper_type, value="maps").grid(row=0, column=0, padx=10)
+                       variable=self.scraper_type, value="maps", command=self.on_scraper_type_change).grid(row=0, column=0, padx=10)
         ttk.Radiobutton(scraper_frame, text="Google Web Scraper", 
-                       variable=self.scraper_type, value="web").grid(row=0, column=1, padx=10)
+                       variable=self.scraper_type, value="web", command=self.on_scraper_type_change).grid(row=0, column=1, padx=10)
+        ttk.Radiobutton(scraper_frame, text="Social Media Scraper", 
+                       variable=self.scraper_type, value="social", command=self.on_scraper_type_change).grid(row=0, column=2, padx=10)
         
         # Search parameters
         params_frame = ttk.LabelFrame(main_frame, text="Search Parameters", padding="10")
         params_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         # Business name
-        ttk.Label(params_frame, text="Business Name/Query:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.business_name_label = ttk.Label(params_frame, text="Business Name/Query:")
+        self.business_name_label.grid(row=0, column=0, sticky=tk.W, pady=5)
         self.business_name = ttk.Entry(params_frame, width=50)
         self.business_name.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
         self.business_name.insert(0, "medical stores")
         
         # Location
-        ttk.Label(params_frame, text="Location:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.location_label = ttk.Label(params_frame, text="Location:")
+        self.location_label.grid(row=1, column=0, sticky=tk.W, pady=5)
         self.location = ttk.Entry(params_frame, width=50)
         self.location.grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
         self.location.insert(0, "Lahore")
@@ -95,9 +105,28 @@ class GoogleScraperApp:
         self.max_pages.grid(row=0, column=3, padx=5)
         self.max_pages.insert(0, "8")
         
+        # Social media params
+        self.social_params_frame = ttk.Frame(params_frame)
+        self.social_params_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(self.social_params_frame, text="Platform:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.social_platform = tk.StringVar(value="facebook")
+        ttk.Radiobutton(self.social_params_frame, text="Facebook", 
+                       variable=self.social_platform, value="facebook").grid(row=0, column=1, padx=5)
+        ttk.Radiobutton(self.social_params_frame, text="Instagram", 
+                       variable=self.social_platform, value="instagram").grid(row=0, column=2, padx=5)
+        
+        ttk.Label(self.social_params_frame, text="Max Results:").grid(row=0, column=3, sticky=tk.W, padx=5)
+        self.social_max_results = ttk.Entry(self.social_params_frame, width=10)
+        self.social_max_results.grid(row=0, column=4, padx=5)
+        self.social_max_results.insert(0, "10")
+        
+        # Initially hide social media params
+        self.social_params_frame.grid_remove()
+        
         # Options
         options_frame = ttk.LabelFrame(main_frame, text="Options", padding="10")
-        options_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        options_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         self.export_excel = tk.BooleanVar(value=True)
         self.export_csv = tk.BooleanVar(value=True)
@@ -121,7 +150,7 @@ class GoogleScraperApp:
         
         # Control buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
         
         self.start_button = ttk.Button(button_frame, text="Start Scraping", 
                                        command=self.start_scraping, width=20)
@@ -137,15 +166,15 @@ class GoogleScraperApp:
         
         # Progress bar
         self.progress = ttk.Progressbar(main_frame, mode='indeterminate')
-        self.progress.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        self.progress.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
         
         # Status label
         self.status_label = ttk.Label(main_frame, text="Ready", foreground="green")
-        self.status_label.grid(row=6, column=0, columnspan=2, pady=5)
+        self.status_label.grid(row=7, column=0, columnspan=2, pady=5)
         
         # Output log
         log_frame = ttk.LabelFrame(main_frame, text="Output Log", padding="10")
-        log_frame.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        log_frame.grid(row=8, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
         
         self.log_text = scrolledtext.ScrolledText(log_frame, height=15, width=80)
         self.log_text.pack(fill=tk.BOTH, expand=True)
@@ -154,9 +183,29 @@ class GoogleScraperApp:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(7, weight=1)
+        main_frame.rowconfigure(8, weight=1)
         params_frame.columnconfigure(1, weight=1)
         options_frame.columnconfigure(1, weight=1)
+    
+    def on_scraper_type_change(self):
+        """Show/hide relevant parameter fields based on scraper type."""
+        scraper_type = self.scraper_type.get()
+        
+        if scraper_type == "web":
+            self.web_params_frame.grid()
+            self.social_params_frame.grid_remove()
+            self.location_label.grid()
+            self.location.grid()
+        elif scraper_type == "social":
+            self.web_params_frame.grid_remove()
+            self.social_params_frame.grid()
+            self.location_label.grid_remove()
+            self.location.grid_remove()
+        else:  # maps
+            self.web_params_frame.grid_remove()
+            self.social_params_frame.grid_remove()
+            self.location_label.grid()
+            self.location.grid()
         
     def browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.output_folder.get())
@@ -223,7 +272,7 @@ class GoogleScraperApp:
                     output_folder=output_folder
                 )
                 
-            else:  # web scraper
+            elif scraper_type == "web":
                 max_results_str = self.max_results.get().strip() or "0"
                 max_results = None if max_results_str == "0" else int(max_results_str)
                 max_pages = int(self.max_pages.get().strip() or "8")
@@ -245,24 +294,71 @@ class GoogleScraperApp:
                     output_folder=output_folder
                 )
             
+            else:  # social media scraper
+                platform = self.social_platform.get()
+                max_results = int(self.social_max_results.get().strip() or "10")
+                
+                self.log(f"Searching {platform.capitalize()} for: {business_name}")
+                self.log(f"Max results: {max_results}")
+                self.log("-" * 50)
+                
+                scraper = SocialMediaSearchScraper(headless=self.headless.get())
+                try:
+                    if platform == "facebook":
+                        results = scraper.search_facebook(business_name, max_results)
+                    else:  # instagram
+                        results = scraper.search_instagram(business_name, max_results)
+                    
+                    # Export to Excel if requested
+                    if self.export_excel.get() and results:
+                        safe_name = "".join(c for c in business_name if c.isalnum() or c in (' ', '-', '_')).strip()
+                        excel_filename = f"{platform}_{safe_name}_results.xlsx"
+                        export_social_media_to_excel(results, excel_filename, output_folder, platform)
+                        self.log(f"✓ Excel file exported to: {output_folder}/{excel_filename}")
+                    
+                finally:
+                    scraper.close()
+            
             self.log(f"\n✓ Scraping completed!")
             self.log(f"✓ Found {len(results)} results")
             
             if self.export_excel.get():
                 self.log(f"✓ Excel file exported to: {output_folder}")
-            if self.export_csv.get():
+            if self.export_csv.get() and scraper_type != "social":
                 self.log(f"✓ CSV file exported to: {output_folder}")
             
             self.log("\nResults Summary:")
             self.log("-" * 50)
-            for i, result in enumerate(results[:10], 1):  # Show first 10
-                name = result.get('name', result.get('title', 'N/A'))
-                phone = result.get('phone', 'N/A')
-                email = result.get('email', 'N/A')
-                score = result.get('lead_score', 0)
-                status = result.get('lead_status', 'N/A')
-                self.log(f"{i}. {name}")
-                self.log(f"   Phone: {phone} | Email: {email} | Score: {score}/100 ({status})")
+            
+            if scraper_type == "social":
+                # Social media results format
+                for i, result in enumerate(results[:10], 1):
+                    if self.social_platform.get() == "facebook":
+                        name = result.get('name', 'N/A')
+                        url = result.get('url', 'N/A')
+                        followers = result.get('followers', result.get('likes', 'N/A'))
+                        category = result.get('category', 'N/A')
+                        self.log(f"{i}. {name}")
+                        self.log(f"   URL: {url}")
+                        self.log(f"   Followers/Likes: {followers} | Category: {category}")
+                    else:  # instagram
+                        username = result.get('username', result.get('full_name', 'N/A'))
+                        url = result.get('url', 'N/A')
+                        followers = result.get('followers', 'N/A')
+                        posts = result.get('posts', 'N/A')
+                        self.log(f"{i}. {username}")
+                        self.log(f"   URL: {url}")
+                        self.log(f"   Followers: {followers} | Posts: {posts}")
+            else:
+                # Maps/Web results format
+                for i, result in enumerate(results[:10], 1):
+                    name = result.get('name', result.get('title', 'N/A'))
+                    phone = result.get('phone', 'N/A')
+                    email = result.get('email', 'N/A')
+                    score = result.get('lead_score', 0)
+                    status = result.get('lead_status', 'N/A')
+                    self.log(f"{i}. {name}")
+                    self.log(f"   Phone: {phone} | Email: {email} | Score: {score}/100 ({status})")
             
             if len(results) > 10:
                 self.log(f"\n... and {len(results) - 10} more results (see Excel/CSV files)")

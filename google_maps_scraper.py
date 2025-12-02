@@ -6,7 +6,7 @@ Scrapes business information (location, phone number, email) from Google Maps by
 import time
 import re
 import os
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -39,48 +39,86 @@ class GoogleMapsScraper:
         self.setup_driver(headless)
     
     def setup_driver(self, headless: bool):
-        """Setup Chrome WebDriver with appropriate options for production."""
+        """Setup Chrome WebDriver with appropriate options."""
         chrome_options = Options()
         
-        # Production-ready Chrome options for EC2/server environment
-        # Always use headless mode on server (EC2 doesn't have display)
-        chrome_options.add_argument('--headless=new')  # Use new headless mode
-        chrome_options.add_argument('--no-sandbox')  # Required for Docker/EC2
-        chrome_options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
-        chrome_options.add_argument('--disable-gpu')  # Required for headless
-        chrome_options.add_argument('--disable-software-rasterizer')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-background-timer-throttling')
-        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-        chrome_options.add_argument('--disable-renderer-backgrounding')
-        chrome_options.add_argument('--disable-features=TranslateUI')
-        chrome_options.add_argument('--disable-ipc-flooding-protection')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--remote-debugging-port=9222')
-        chrome_options.add_argument('--disable-setuid-sandbox')
-        chrome_options.add_argument('--disable-web-security')
-        chrome_options.add_argument('--allow-running-insecure-content')
+        # Basic options for all environments
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--disable-infobars')
         chrome_options.add_argument('--disable-notifications')
         chrome_options.add_argument('--disable-popup-blocking')
+        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--start-maximized')
         
         # Anti-detection options
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
-        # Use Linux user-agent for server environment
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        # Platform-specific options
+        import platform
+        is_windows = platform.system() == 'Windows'
+        is_linux = platform.system() == 'Linux'
+        
+        if headless:
+            # Headless mode options
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            
+            if is_linux:
+                # Linux-specific headless options
+                chrome_options.add_argument('--disable-setuid-sandbox')
+                chrome_options.add_argument('--remote-debugging-port=9222')
+                chrome_options.add_argument('user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            else:
+                # Windows headless options (more minimal)
+                chrome_options.add_argument('--disable-software-rasterizer')
+        else:
+            # Non-headless mode (Windows GUI)
+            if is_windows:
+                # Windows-specific options for GUI mode
+                chrome_options.add_argument('--disable-extensions')
+                chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            elif is_linux:
+                # Linux GUI mode (if X server available)
+                chrome_options.add_argument('--no-sandbox')
+                chrome_options.add_argument('--disable-dev-shm-usage')
         
         try:
             if WEBDRIVER_MANAGER_AVAILABLE:
+                # Use webdriver-manager to automatically handle ChromeDriver
                 service = Service(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
             else:
+                # Fallback: use system ChromeDriver
                 self.driver = webdriver.Chrome(options=chrome_options)
+            
+            # Hide webdriver property
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            
+            # Set page load timeout
+            self.driver.set_page_load_timeout(30)
+            
         except Exception as e:
-            raise Exception(f"Failed to initialize Chrome driver. Make sure ChromeDriver is installed. Error: {str(e)}")
+            error_msg = str(e)
+            # Provide more helpful error messages
+            if "session not created" in error_msg.lower() or "unable to connect to renderer" in error_msg.lower():
+                raise Exception(
+                    f"Failed to initialize Chrome driver. This may be due to:\n"
+                    f"1. Chrome browser not installed or outdated\n"
+                    f"2. ChromeDriver version mismatch\n"
+                    f"3. Chrome process already running\n"
+                    f"4. Insufficient system resources\n\n"
+                    f"Try:\n"
+                    f"- Update Chrome browser to latest version\n"
+                    f"- Close all Chrome windows and try again\n"
+                    f"- Restart your computer\n"
+                    f"- Check if Chrome is installed correctly\n\n"
+                    f"Original error: {error_msg}"
+                )
+            else:
+                raise Exception(f"Failed to initialize Chrome driver. Make sure ChromeDriver is installed. Error: {error_msg}")
     
     def search_business(self, business_name: str, location: Optional[str] = None) -> List[Dict[str, Optional[str]]]:
         """
@@ -286,6 +324,72 @@ class GoogleMapsScraper:
             except Exception as e:
                 print(f"Error extracting phone: {str(e)}")
             
+            # Extract website URL FIRST (needed for email extraction)
+            try:
+                website_selectors = [
+                    "a[data-item-id='authority']",
+                    "a[href^='http']",
+                    "button[data-item-id='authority']",
+                    "[data-item-id='authority']",
+                    "a[aria-label*='Website']",
+                    "a[aria-label*='website']",
+                    "button[aria-label*='Website']",
+                    "button[aria-label*='website']"
+                ]
+                
+                for selector in website_selectors:
+                    try:
+                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                        for element in elements:
+                            # Try to get href first
+                            href = element.get_attribute("href")
+                            if not href:
+                                # If it's a button, try clicking it to get the URL
+                                try:
+                                    if element.tag_name == 'button':
+                                        # Click button to reveal link
+                                        element.click()
+                                        time.sleep(1)
+                                        # Try to find the link after clicking
+                                        link_elements = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='http']")
+                                        for link in link_elements:
+                                            href = link.get_attribute("href")
+                                            if href and (href.startswith("http://") or href.startswith("https://")):
+                                                if "google.com" not in href.lower() and "maps.google" not in href.lower():
+                                                    info["website"] = href
+                                                    break
+                                        if info["website"]:
+                                            break
+                                except:
+                                    pass
+                            
+                            if href and (href.startswith("http://") or href.startswith("https://")):
+                                # Filter out Google Maps URLs
+                                if "google.com" not in href.lower() and "maps.google" not in href.lower():
+                                    info["website"] = href
+                                    print(f"  ✓ Found website: {info['website']}")
+                                    break
+                        if info["website"]:
+                            break
+                    except NoSuchElementException:
+                        continue
+                
+                # Also search in page source
+                if not info["website"]:
+                    url_pattern = r'https?://(?!maps\.google|google\.com)[^\s<>"{}|\\^`\[\]]+'
+                    url_matches = re.findall(url_pattern, page_source)
+                    for url in url_matches:
+                        if "google.com" not in url.lower() and "maps.google" not in url.lower():
+                            info["website"] = url
+                            print(f"  ✓ Found website in page source: {info['website']}")
+                            break
+                
+                if not info["website"]:
+                    print(f"  ⊗ No website found for this business")
+                            
+            except Exception as e:
+                print(f"Error extracting website: {str(e)}")
+            
             # Extract email (rarely available on Google Maps, but we'll try)
             try:
                 email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
@@ -294,8 +398,65 @@ class GoogleMapsScraper:
                 filtered_emails = [e for e in email_matches if not any(x in e.lower() for x in ['google', 'gmail', 'example', 'test', 'noreply', 'no-reply'])]
                 if filtered_emails:
                     info["email"] = filtered_emails[0]
+                    print(f"  ✓ Found email on Google Maps: {info['email']}")
             except Exception as e:
                 print(f"Error extracting email: {str(e)}")
+            
+            # Extract social media links from Google Maps FIRST (before visiting website)
+            try:
+                social_links = self._extract_social_media_links(page_source)
+                info.update(social_links)
+            except Exception as e:
+                print(f"Error extracting social media links from Google Maps: {str(e)}")
+            
+            # If email not found or social links missing, visit website and extract email and social links
+            if info["website"]:
+                try:
+                    should_visit = not info["email"] or not any([info.get("facebook"), info.get("instagram"), info.get("linkedin"), info.get("twitter"), info.get("youtube"), info.get("tiktok")])
+                    if should_visit:
+                        if not info["email"]:
+                            print(f"  Email not found on Google Maps. Visiting website to find email and social links: {info['website']}")
+                        else:
+                            print(f"  Visiting website to find social media links: {info['website']}")
+                        
+                        website_email, website_social = self._extract_email_from_website(info["website"])
+                        
+                        # Update email if found
+                        if website_email and not info["email"]:
+                            info["email"] = website_email
+                            print(f"  ✓ Found email on website: {website_email}")
+                        elif not website_email and not info["email"]:
+                            print(f"  ✗ No email found on website")
+                        
+                        # Merge social media links (website links supplement Google Maps links)
+                        for platform in ["facebook", "instagram", "linkedin", "twitter", "youtube", "tiktok"]:
+                            if website_social.get(platform) and not info.get(platform):
+                                info[platform] = website_social[platform]
+                                print(f"  ✓ Found {platform} on website: {website_social[platform]}")
+                            
+                except Exception as e:
+                    print(f"  Error extracting data from website: {str(e)}")
+            
+            # Create combined social media links string (after all extraction)
+            try:
+                social_list = []
+                if info.get("facebook"):
+                    social_list.append(f"Facebook: {info['facebook']}")
+                if info.get("instagram"):
+                    social_list.append(f"Instagram: {info['instagram']}")
+                if info.get("linkedin"):
+                    social_list.append(f"LinkedIn: {info['linkedin']}")
+                if info.get("twitter"):
+                    social_list.append(f"Twitter: {info['twitter']}")
+                if info.get("youtube"):
+                    social_list.append(f"YouTube: {info['youtube']}")
+                if info.get("tiktok"):
+                    social_list.append(f"TikTok: {info['tiktok']}")
+                
+                if social_list:
+                    info["social_media_links"] = " | ".join(social_list)
+            except Exception as e:
+                print(f"Error creating social media links string: {str(e)}")
             
             # Extract rating and reviews count
             try:
@@ -372,44 +533,6 @@ class GoogleMapsScraper:
             except Exception as e:
                 print(f"Error extracting rating: {str(e)}")
             
-            # Extract website URL
-            try:
-                website_selectors = [
-                    "a[data-item-id='authority']",
-                    "a[href^='http']",
-                    "button[data-item-id='authority']",
-                    "[data-item-id='authority']",
-                    "a[aria-label*='Website']",
-                    "a[aria-label*='website']"
-                ]
-                
-                for selector in website_selectors:
-                    try:
-                        elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                        for element in elements:
-                            href = element.get_attribute("href")
-                            if href and (href.startswith("http://") or href.startswith("https://")):
-                                # Filter out Google Maps URLs
-                                if "google.com" not in href.lower() and "maps.google" not in href.lower():
-                                    info["website"] = href
-                                    break
-                        if info["website"]:
-                            break
-                    except NoSuchElementException:
-                        continue
-                
-                # Also search in page source
-                if not info["website"]:
-                    url_pattern = r'https?://(?!maps\.google|google\.com)[^\s<>"{}|\\^`\[\]]+'
-                    url_matches = re.findall(url_pattern, page_source)
-                    for url in url_matches:
-                        if "google.com" not in url.lower() and "maps.google" not in url.lower():
-                            info["website"] = url
-                            break
-                            
-            except Exception as e:
-                print(f"Error extracting website: {str(e)}")
-            
             # Extract business category/type
             try:
                 category_selectors = [
@@ -476,32 +599,6 @@ class GoogleMapsScraper:
             except Exception as e:
                 print(f"Error extracting business hours: {str(e)}")
             
-            # Extract social media links
-            try:
-                social_links = self._extract_social_media_links(page_source)
-                info.update(social_links)
-                
-                # Create combined social media links string
-                social_list = []
-                if info.get("facebook"):
-                    social_list.append(f"Facebook: {info['facebook']}")
-                if info.get("instagram"):
-                    social_list.append(f"Instagram: {info['instagram']}")
-                if info.get("linkedin"):
-                    social_list.append(f"LinkedIn: {info['linkedin']}")
-                if info.get("twitter"):
-                    social_list.append(f"Twitter: {info['twitter']}")
-                if info.get("youtube"):
-                    social_list.append(f"YouTube: {info['youtube']}")
-                if info.get("tiktok"):
-                    social_list.append(f"TikTok: {info['tiktok']}")
-                
-                if social_list:
-                    info["social_media_links"] = " | ".join(social_list)
-                    
-            except Exception as e:
-                print(f"Error extracting social media links: {str(e)}")
-            
             # Calculate lead score based on data completeness
             lead_score = 0
             if info["name"]:
@@ -554,56 +651,481 @@ class GoogleMapsScraper:
             return None
     
     def _extract_all_sidebar_results(self) -> List[Dict[str, Optional[str]]]:
-        """Extract ALL results from the sidebar by clicking each one."""
+        """Extract ALL results from the sidebar by scrolling and clicking each one."""
         results = []
         try:
             # Wait for sidebar to load
-            time.sleep(2)
+            time.sleep(3)
             
-            # Find all result items in sidebar
-            result_items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+            # First, scroll to load all results in sidebar
+            print("Scrolling to load all results...")
+            self._scroll_sidebar_to_load_all()
             
-            print(f"Found {len(result_items)} results. Extracting information...")
+            # Now find all result items in sidebar (after scrolling)
+            # Get items multiple times to ensure we have the complete list
+            result_items = []
+            for attempt in range(3):
+                items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+                if len(items) > len(result_items):
+                    result_items = items
+                time.sleep(0.5)
+            
+            print(f"Found {len(result_items)} total results. Extracting information...")
+            
+            # Use set to track processed items and avoid duplicates
+            processed_names = set()
+            processed_addresses = set()  # Also track by address to catch duplicates with different names
             
             for idx, item in enumerate(result_items, 1):
                 try:
                     print(f"Processing result {idx}/{len(result_items)}...")
                     
                     # Scroll item into view
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", item)
-                    time.sleep(0.5)
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", item)
+                    time.sleep(0.8)
                     
                     # Click on the item to open business details
                     try:
                         item.click()
                     except:
                         # Try alternative click method
-                        self.driver.execute_script("arguments[0].click();", item)
+                        try:
+                            self.driver.execute_script("arguments[0].click();", item)
+                        except:
+                            # Try clicking on a child element
+                            try:
+                                clickable = item.find_element(By.CSS_SELECTOR, "a, button, div[role='button']")
+                                clickable.click()
+                            except:
+                                print(f"  Could not click result {idx}, skipping...")
+                                continue
                     
                     # Wait for business details to load
-                    time.sleep(2)
+                    time.sleep(2.5)
                     
                     # Extract information
                     business_info = self._extract_business_info()
                     if business_info:
-                        results.append(business_info)
+                        # Check for duplicates by name and address
+                        name = business_info.get('name', '')
+                        address = business_info.get('address', '')
+                        
+                        # Create unique identifier
+                        unique_id = None
+                        if name:
+                            unique_id = name.lower().strip()
+                        elif address:
+                            unique_id = address.lower().strip()
+                        
+                        # Check if we've seen this before
+                        is_duplicate = False
+                        if unique_id:
+                            if unique_id in processed_names:
+                                is_duplicate = True
+                            else:
+                                processed_names.add(unique_id)
+                        
+                        # Also check by address if name is different
+                        if address and not is_duplicate:
+                            address_normalized = address.lower().strip()
+                            if address_normalized in processed_addresses:
+                                is_duplicate = True
+                            else:
+                                processed_addresses.add(address_normalized)
+                        
+                        if not is_duplicate:
+                            results.append(business_info)
+                            display_name = name if name else f"Business #{idx}"
+                            print(f"  ✓ Extracted: {display_name}")
+                        else:
+                            print(f"  ⊗ Skipped duplicate: {name if name else 'Unknown'}")
+                    else:
+                        print(f"  ⊗ No data extracted for result {idx}")
                     
-                    # Scroll back to see next items
-                    self.driver.execute_script("window.scrollTo(0, 0);")
+                    # Scroll back to sidebar to see next items
+                    # Find sidebar element and scroll it
+                    try:
+                        sidebar = self.driver.find_element(By.CSS_SELECTOR, "div[role='main'] div[role='feed'], div[aria-label*='Results']")
+                        self.driver.execute_script("arguments[0].scrollTop = 0;", sidebar)
+                    except:
+                        # Fallback: scroll window
+                        self.driver.execute_script("window.scrollTo(0, 0);")
                     time.sleep(0.5)
                     
                 except Exception as e:
-                    print(f"Error processing result {idx}: {str(e)}")
+                    print(f"  Error processing result {idx}: {str(e)}")
                     continue
+            
+            print(f"\n✓ Extracted {len(results)} unique results")
                     
         except Exception as e:
             print(f"Error extracting sidebar results: {str(e)}")
         
         return results
     
+    def _scroll_sidebar_to_load_all(self):
+        """Scroll the sidebar to load ALL available results - ensures no records are missed."""
+        try:
+            # Find the sidebar scrollable container
+            sidebar_selectors = [
+                "div[role='main'] div[role='feed']",
+                "div[aria-label*='Results']",
+                "div[role='feed']",
+                "div.m6QErb.DxyBCb.kA9KIf.dS8AEf",  # Google Maps sidebar container
+                "div[jsaction*='pane.resultContainer']"
+            ]
+            
+            sidebar = None
+            for selector in sidebar_selectors:
+                try:
+                    sidebar = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if sidebar:
+                        break
+                except:
+                    continue
+            
+            if not sidebar:
+                print("  Warning: Could not find sidebar container, using window scroll")
+                sidebar = self.driver
+            
+            # Enhanced scroll strategy: Keep scrolling until absolutely no new results appear
+            last_count = 0
+            no_change_count = 0
+            max_no_change = 5  # Increased: Stop after 5 scrolls with no new results (was 3)
+            scroll_attempts = 0
+            max_scrolls = 200  # Increased: Allow up to 200 scrolls to ensure we get everything (was 50)
+            consecutive_same_count = 0
+            max_consecutive_same = 5  # Additional check: 5 consecutive identical counts
+            
+            print("  Scrolling sidebar to load ALL results (this may take a while)...")
+            
+            while scroll_attempts < max_scrolls:
+                scroll_attempts += 1
+                
+                # Get current count of results - check multiple times to ensure accuracy
+                current_items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+                current_count = len(current_items)
+                
+                # Try multiple scroll strategies for better coverage
+                if sidebar == self.driver:
+                    # Strategy 1: Scroll to bottom
+                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    time.sleep(0.5)
+                    # Strategy 2: Scroll by large amount
+                    self.driver.execute_script("window.scrollBy(0, 10000);")
+                else:
+                    # Strategy 1: Scroll sidebar container to bottom
+                    self.driver.execute_script(
+                        "arguments[0].scrollTop = arguments[0].scrollHeight;",
+                        sidebar
+                    )
+                    time.sleep(0.3)
+                    # Strategy 2: Scroll by large amount
+                    try:
+                        scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", sidebar)
+                        scroll_top = self.driver.execute_script("return arguments[0].scrollTop;", sidebar)
+                        client_height = self.driver.execute_script("return arguments[0].clientHeight;", sidebar)
+                        # Scroll down by client height
+                        self.driver.execute_script(
+                            f"arguments[0].scrollTop = {scroll_top + client_height};",
+                            sidebar
+                        )
+                    except:
+                        pass
+                
+                # Wait longer for results to load (some results load slowly)
+                time.sleep(2.0)  # Increased from 1.5 to 2.0 seconds
+                
+                # Check multiple times if new results appeared (some load asynchronously)
+                for check_attempt in range(3):
+                    new_items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+                    new_count = len(new_items)
+                    
+                    if new_count > current_count:
+                        print(f"  Loaded {new_count} results so far...")
+                        last_count = new_count
+                        no_change_count = 0
+                        consecutive_same_count = 0
+                        break
+                    elif new_count == current_count:
+                        if check_attempt < 2:  # Wait a bit more if first check shows no change
+                            time.sleep(1.0)
+                        else:
+                            # Count didn't change after multiple checks
+                            if new_count == last_count:
+                                consecutive_same_count += 1
+                            else:
+                                consecutive_same_count = 0
+                            no_change_count += 1
+                            break
+                
+                # Check for end of results indicators
+                try:
+                    page_source = self.driver.page_source.lower()
+                    # Look for indicators that we've reached the end
+                    end_indicators = [
+                        "no more results",
+                        "end of results",
+                        "showing all results",
+                        "all results shown"
+                    ]
+                    if any(indicator in page_source for indicator in end_indicators):
+                        print(f"  Reached end of results. Total: {new_count} results")
+                        break
+                except:
+                    pass
+                
+                # Multiple exit conditions to ensure we've got everything
+                if no_change_count >= max_no_change:
+                    # Double-check: scroll one more time and wait longer
+                    if sidebar == self.driver:
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    else:
+                        self.driver.execute_script(
+                            "arguments[0].scrollTop = arguments[0].scrollHeight;",
+                            sidebar
+                        )
+                    time.sleep(3.0)  # Wait longer for final check
+                    
+                    final_items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+                    final_count = len(final_items)
+                    
+                    if final_count > new_count:
+                        # Found more! Continue scrolling
+                        print(f"  Found more results after final check! Now at {final_count} results...")
+                        last_count = final_count
+                        no_change_count = 0
+                        continue
+                    else:
+                        print(f"  No more results loading. Total: {final_count} results")
+                        break
+                
+                # Additional check: if we've had many consecutive identical counts
+                if consecutive_same_count >= max_consecutive_same:
+                    # Final verification scroll
+                    if sidebar == self.driver:
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    else:
+                        self.driver.execute_script(
+                            "arguments[0].scrollTop = arguments[0].scrollHeight;",
+                            sidebar
+                        )
+                    time.sleep(2.0)
+                    final_check = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+                    if len(final_check) == new_count:
+                        print(f"  Confirmed end of results. Total: {new_count} results")
+                        break
+            
+            # Final comprehensive scroll to ensure we didn't miss anything
+            print("  Performing final comprehensive scroll check...")
+            for final_scroll in range(3):
+                if sidebar == self.driver:
+                    self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                else:
+                    self.driver.execute_script(
+                        "arguments[0].scrollTop = arguments[0].scrollHeight;",
+                        sidebar
+                    )
+                time.sleep(1.5)
+            
+            # Get final count
+            final_items = self.driver.find_elements(By.CSS_SELECTOR, "div[role='article']")
+            final_count = len(final_items)
+            print(f"  ✓ Final count: {final_count} results loaded")
+            
+            # Final scroll to top
+            if sidebar != self.driver:
+                self.driver.execute_script("arguments[0].scrollTop = 0;", sidebar)
+            else:
+                self.driver.execute_script("window.scrollTo(0, 0);")
+            
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"  Error during scrolling: {str(e)}")
+            # Continue anyway - we'll extract what we can
+    
     def _extract_sidebar_results(self) -> List[Dict[str, Optional[str]]]:
         """Extract results from the sidebar when multiple results are shown (legacy method)."""
         return self._extract_all_sidebar_results()
+    
+    def _extract_email_from_website(self, website_url: str) -> Tuple[Optional[str], Dict[str, Optional[str]]]:
+        """
+        Visit the business website and extract email addresses and social media links.
+        Tries multiple pages (home, contact, about) to find email and social links.
+        
+        Args:
+            website_url: URL of the business website
+            
+        Returns:
+            Tuple of (email address if found, dictionary of social media links)
+        """
+        try:
+            # Store current window handle and URL
+            original_window = self.driver.current_window_handle
+            original_url = self.driver.current_url
+            
+            # Clean and normalize website URL
+            if not website_url.startswith('http://') and not website_url.startswith('https://'):
+                website_url = 'https://' + website_url
+            website_url = website_url.rstrip('/')
+            
+            # Pages to try (homepage, contact, about)
+            pages_to_try = [
+                website_url,  # Homepage
+                f"{website_url}/contact",
+                f"{website_url}/contact-us",
+                f"{website_url}/about",
+                f"{website_url}/about-us",
+                f"{website_url}/get-in-touch",
+                f"{website_url}/reach-us"
+            ]
+            
+            all_emails = []
+            website_social_links = {
+                "facebook": None,
+                "instagram": None,
+                "linkedin": None,
+                "twitter": None,
+                "youtube": None,
+                "tiktok": None
+            }
+            exclude_patterns = [
+                'google', 'gmail', 'example', 'test', 'noreply', 'no-reply',
+                'facebook', 'twitter', 'instagram', 'linkedin', 'youtube',
+                'sentry', 'analytics', 'tracking', 'pixel', 'cdn',
+                'wix', 'squarespace', 'wordpress', 'shopify', 'privacy',
+                'terms', 'legal', 'cookie', 'newsletter', 'unsubscribe'
+            ]
+            
+            # Try each page
+            for page_url in pages_to_try[:3]:  # Try first 3 pages to save time
+                try:
+                    # Open website in new tab
+                    self.driver.execute_script(f"window.open('{page_url}', '_blank');")
+                    time.sleep(2)
+                    
+                    # Switch to new tab
+                    windows = self.driver.window_handles
+                    if len(windows) > 1:
+                        self.driver.switch_to.window(windows[-1])
+                    else:
+                        # If new tab didn't open, navigate directly
+                        self.driver.get(page_url)
+                    
+                    # Wait for page to load
+                    time.sleep(4)
+                    
+                    # Get page source
+                    page_source = self.driver.page_source
+                    
+                    # Extract email using regex
+                    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+                    email_matches = re.findall(email_pattern, page_source)
+                    
+                    # Filter emails
+                    for email in email_matches:
+                        email_lower = email.lower()
+                        # Skip if contains excluded patterns
+                        if any(pattern in email_lower for pattern in exclude_patterns):
+                            continue
+                        # Skip if looks like an image or file
+                        if len(email) > 50:
+                            continue
+                        # Skip if it's just a domain without proper email
+                        if '@' not in email or email.count('@') > 1:
+                            continue
+                        # Skip if already found
+                        if email not in all_emails:
+                            all_emails.append(email)
+                    
+                    # Also check for mailto links
+                    try:
+                        mailto_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='mailto:']")
+                        for link in mailto_links:
+                            href = link.get_attribute("href")
+                            if href and href.startswith("mailto:"):
+                                email = href.replace("mailto:", "").split("?")[0].strip()
+                                if email and '@' in email and email not in all_emails:
+                                    email_lower = email.lower()
+                                    if not any(pattern in email_lower for pattern in exclude_patterns):
+                                        all_emails.append(email)
+                    except:
+                        pass
+                    
+                    # Extract social media links from website
+                    try:
+                        page_social_links = self._extract_social_media_links(page_source)
+                        # Merge with existing social links (website links take priority)
+                        for platform in website_social_links:
+                            if page_social_links.get(platform) and not website_social_links[platform]:
+                                website_social_links[platform] = page_social_links[platform]
+                    except Exception as e:
+                        print(f"  Error extracting social links from website: {str(e)}")
+                    
+                    # If we found emails, we can stop trying other pages (but continue collecting social links)
+                    if all_emails and any(website_social_links.values()):
+                        break
+                    
+                    # Close tab before trying next page
+                    if len(self.driver.window_handles) > 1:
+                        self.driver.close()
+                        self.driver.switch_to.window(original_window)
+                    
+                except Exception as e:
+                    # If page fails, try next one
+                    try:
+                        if len(self.driver.window_handles) > 1:
+                            self.driver.close()
+                            self.driver.switch_to.window(original_window)
+                    except:
+                        pass
+                    continue
+            
+            # Make sure we're back on the original page
+            try:
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                    self.driver.switch_to.window(original_window)
+                elif self.driver.current_url != original_url:
+                    self.driver.back()
+                    time.sleep(2)
+            except:
+                pass
+            
+            # Return best email found and social media links
+            email_result = None
+            if all_emails:
+                # Prefer emails that look more business-like
+                business_keywords = ['info', 'contact', 'hello', 'support', 'sales', 'admin', 'business', 'office', 'inquiry', 'enquiry']
+                business_emails = [e for e in all_emails if any(x in e.lower() for x in business_keywords)]
+                if business_emails:
+                    email_result = business_emails[0]
+                else:
+                    email_result = all_emails[0]
+            
+            return email_result, website_social_links
+            
+        except Exception as e:
+            print(f"  Error visiting website for data extraction: {str(e)}")
+            # Make sure we're back on the original page
+            try:
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                    self.driver.switch_to.window(original_window)
+                elif self.driver.current_url != original_url:
+                    self.driver.back()
+                    time.sleep(2)
+            except:
+                pass
+            return None, {
+                "facebook": None,
+                "instagram": None,
+                "linkedin": None,
+                "twitter": None,
+                "youtube": None,
+                "tiktok": None
+            }
     
     def _extract_social_media_links(self, page_source: str) -> Dict[str, Optional[str]]:
         """

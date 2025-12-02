@@ -5,6 +5,11 @@ Run: python build_exe.py
 
 import PyInstaller.__main__
 import os
+import sys
+
+# Check if running on Windows
+if sys.platform != 'win32':
+    print("Warning: This build script is optimized for Windows. PyInstaller will still work on other platforms.")
 
 # PyInstaller arguments
 args = [
@@ -15,6 +20,7 @@ args = [
     '--icon=NONE',  # You can add an icon file here if you have one
     '--add-data=google_maps_scraper.py;.',  # Include maps scraper
     '--add-data=google_web_scraper.py;.',  # Include web scraper
+    '--add-data=social_media_search_scraper.py;.',  # Include social media search scraper
     '--hidden-import=selenium',
     '--hidden-import=webdriver_manager',
     '--hidden-import=openpyxl',
@@ -22,8 +28,13 @@ args = [
     '--collect-all=selenium',
     '--collect-all=webdriver_manager',
     '--collect-all=openpyxl',
+    '--noconfirm',  # Overwrite output without asking
+    '--clean',  # Clean PyInstaller cache before building
 ]
 
+print("Building EXE file...")
+print("This may take a few minutes...")
 PyInstaller.__main__.run(args)
+print("\nBuild complete! Check the 'dist' folder for GoogleBusinessScraper.exe")
 
 
