@@ -392,12 +392,71 @@ class GoogleMapsScraper:
             
             # Extract email (rarely available on Google Maps, but we'll try)
             try:
-                email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-                email_matches = re.findall(email_pattern, page_source)
+                # Multiple email patterns for better detection
+                email_patterns = [
+                    r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # Standard email
+                    r'[a-zA-Z0-9._%+-]+\[?@\]?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # Email with [at] protection
+                    r'[a-zA-Z0-9._%+-]+\s*\(at\)\s*[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # Email with (at) protection
+                    r'[a-zA-Z0-9._%+-]+\s*at\s*[a-zA-Z0-9.-]+\s*dot\s*[a-zA-Z]{2,}',  # Email with "at" and "dot"
+                ]
+                
+                all_email_matches = []
+                for pattern in email_patterns:
+                    matches = re.findall(pattern, page_source, re.IGNORECASE)
+                    all_email_matches.extend(matches)
+                
+                # Also check for mailto links in visible elements
+                try:
+                    mailto_elements = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='mailto:'], *[href^='mailto:']")
+                    for elem in mailto_elements:
+                        href = elem.get_attribute("href")
+                        if href and href.startswith("mailto:"):
+                            email = href.replace("mailto:", "").split("?")[0].split("&")[0].strip()
+                            if email and '@' in email:
+                                all_email_matches.append(email)
+                except:
+                    pass
+                
                 # Filter out common non-business emails
-                filtered_emails = [e for e in email_matches if not any(x in e.lower() for x in ['google', 'gmail', 'example', 'test', 'noreply', 'no-reply'])]
+                exclude_patterns = [
+                    'google', 'gmail', 'example', 'test', 'noreply', 'no-reply',
+                    'facebook', 'twitter', 'instagram', 'linkedin', 'youtube',
+                    'sentry', 'analytics', 'tracking', 'pixel', 'cdn',
+                    'wix', 'squarespace', 'wordpress', 'shopify', 'privacy',
+                    'terms', 'legal', 'cookie', 'newsletter', 'unsubscribe',
+                    'doubleclick', 'googletagmanager', 'adservice', 'adsystem'
+                ]
+                
+                filtered_emails = []
+                for email in all_email_matches:
+                    # Clean email (remove [at] and (at) replacements)
+                    email = email.replace('[at]', '@').replace('(at)', '@').replace(' at ', '@')
+                    email = email.replace('[dot]', '.').replace('(dot)', '.').replace(' dot ', '.')
+                    email = email.strip()
+                    
+                    # Validate email format
+                    if not re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$', email):
+                        continue
+                    
+                    email_lower = email.lower()
+                    # Skip if contains excluded patterns
+                    if any(pattern in email_lower for pattern in exclude_patterns):
+                        continue
+                    # Skip if too long (likely not a real email)
+                    if len(email) > 60:
+                        continue
+                    # Skip if already in list
+                    if email not in filtered_emails:
+                        filtered_emails.append(email)
+                
                 if filtered_emails:
-                    info["email"] = filtered_emails[0]
+                    # Prefer business-like emails
+                    business_keywords = ['info', 'contact', 'hello', 'support', 'sales', 'admin', 'business', 'office', 'inquiry', 'enquiry', 'help']
+                    business_emails = [e for e in filtered_emails if any(x in e.lower().split('@')[0] for x in business_keywords)]
+                    if business_emails:
+                        info["email"] = business_emails[0]
+                    else:
+                        info["email"] = filtered_emails[0]
                     print(f"  ✓ Found email on Google Maps: {info['email']}")
             except Exception as e:
                 print(f"Error extracting email: {str(e)}")
@@ -412,27 +471,48 @@ class GoogleMapsScraper:
             # If email not found or social links missing, visit website and extract email and social links
             if info["website"]:
                 try:
-                    should_visit = not info["email"] or not any([info.get("facebook"), info.get("instagram"), info.get("linkedin"), info.get("twitter"), info.get("youtube"), info.get("tiktok")])
-                    if should_visit:
+                    # Always visit website for better data extraction (even if we have some data)
+                    has_email = bool(info.get("email"))
+                    has_social = any([info.get("facebook"), info.get("instagram"), info.get("linkedin"), info.get("twitter"), info.get("youtube"), info.get("tiktok")])
+                    
+                    if not has_email:
+                        print(f"  Email not found on Google Maps. Visiting website to find email and social links: {info['website']}")
+                    elif not has_social:
+                        print(f"  Social links not found on Google Maps. Visiting website to find social media links: {info['website']}")
+                    else:
+                        print(f"  Visiting website to enhance data extraction (email and social links): {info['website']}")
+                    
+                    website_email, website_social = self._extract_email_from_website(info["website"])
+                    
+                    # Update email if found (website email takes priority if it's from same domain)
+                    if website_email:
                         if not info["email"]:
-                            print(f"  Email not found on Google Maps. Visiting website to find email and social links: {info['website']}")
-                        else:
-                            print(f"  Visiting website to find social media links: {info['website']}")
-                        
-                        website_email, website_social = self._extract_email_from_website(info["website"])
-                        
-                        # Update email if found
-                        if website_email and not info["email"]:
                             info["email"] = website_email
                             print(f"  ✓ Found email on website: {website_email}")
-                        elif not website_email and not info["email"]:
-                            print(f"  ✗ No email found on website")
-                        
-                        # Merge social media links (website links supplement Google Maps links)
-                        for platform in ["facebook", "instagram", "linkedin", "twitter", "youtube", "tiktok"]:
-                            if website_social.get(platform) and not info.get(platform):
+                        else:
+                            # Prefer website email if it's from the same domain
+                            try:
+                                from urllib.parse import urlparse
+                                parsed_url = urlparse(info["website"])
+                                website_domain = parsed_url.netloc.replace('www.', '')
+                                if website_domain.lower() in website_email.lower():
+                                    info["email"] = website_email
+                                    print(f"  ✓ Updated email from website (same domain): {website_email}")
+                            except:
+                                pass
+                    elif not info["email"]:
+                        print(f"  ✗ No email found on website")
+                    
+                    # Merge social media links (website links take priority and supplement existing)
+                    for platform in ["facebook", "instagram", "linkedin", "twitter", "youtube", "tiktok"]:
+                        if website_social.get(platform):
+                            if not info.get(platform):
                                 info[platform] = website_social[platform]
                                 print(f"  ✓ Found {platform} on website: {website_social[platform]}")
+                            # Website links are generally more reliable, so update if found
+                            elif website_social[platform] != info.get(platform):
+                                info[platform] = website_social[platform]
+                                print(f"  ✓ Updated {platform} from website: {website_social[platform]}")
                             
                 except Exception as e:
                     print(f"  Error extracting data from website: {str(e)}")
@@ -953,6 +1033,7 @@ class GoogleMapsScraper:
         """
         Visit the business website and extract email addresses and social media links.
         Tries multiple pages (home, contact, about) to find email and social links.
+        Enhanced with better extraction methods.
         
         Args:
             website_url: URL of the business website
@@ -970,15 +1051,26 @@ class GoogleMapsScraper:
                 website_url = 'https://' + website_url
             website_url = website_url.rstrip('/')
             
-            # Pages to try (homepage, contact, about)
+            # Extract domain for better email filtering
+            try:
+                from urllib.parse import urlparse
+                parsed_url = urlparse(website_url)
+                domain = parsed_url.netloc.replace('www.', '')
+            except:
+                domain = None
+            
+            # Pages to try (homepage, contact, about) - expanded list
             pages_to_try = [
                 website_url,  # Homepage
                 f"{website_url}/contact",
                 f"{website_url}/contact-us",
+                f"{website_url}/contact.html",
                 f"{website_url}/about",
                 f"{website_url}/about-us",
                 f"{website_url}/get-in-touch",
-                f"{website_url}/reach-us"
+                f"{website_url}/reach-us",
+                f"{website_url}/contactus",
+                f"{website_url}/contact-us.html"
             ]
             
             all_emails = []
@@ -995,11 +1087,13 @@ class GoogleMapsScraper:
                 'facebook', 'twitter', 'instagram', 'linkedin', 'youtube',
                 'sentry', 'analytics', 'tracking', 'pixel', 'cdn',
                 'wix', 'squarespace', 'wordpress', 'shopify', 'privacy',
-                'terms', 'legal', 'cookie', 'newsletter', 'unsubscribe'
+                'terms', 'legal', 'cookie', 'newsletter', 'unsubscribe',
+                'doubleclick', 'googletagmanager', 'adservice', 'adsystem',
+                'cloudflare', 'amazonaws', 'azure', 'github', 'stackoverflow'
             ]
             
-            # Try each page
-            for page_url in pages_to_try[:3]:  # Try first 3 pages to save time
+            # Try each page (increased to 5 pages for better coverage)
+            for page_url in pages_to_try[:5]:
                 try:
                     # Open website in new tab
                     self.driver.execute_script(f"window.open('{page_url}', '_blank');")
@@ -1013,47 +1107,118 @@ class GoogleMapsScraper:
                         # If new tab didn't open, navigate directly
                         self.driver.get(page_url)
                     
-                    # Wait for page to load
-                    time.sleep(4)
+                    # Wait for page to load and JavaScript to execute
+                    time.sleep(5)
                     
-                    # Get page source
-                    page_source = self.driver.page_source
-                    
-                    # Extract email using regex
-                    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-                    email_matches = re.findall(email_pattern, page_source)
-                    
-                    # Filter emails
-                    for email in email_matches:
-                        email_lower = email.lower()
-                        # Skip if contains excluded patterns
-                        if any(pattern in email_lower for pattern in exclude_patterns):
-                            continue
-                        # Skip if looks like an image or file
-                        if len(email) > 50:
-                            continue
-                        # Skip if it's just a domain without proper email
-                        if '@' not in email or email.count('@') > 1:
-                            continue
-                        # Skip if already found
-                        if email not in all_emails:
-                            all_emails.append(email)
-                    
-                    # Also check for mailto links
+                    # Wait for dynamic content to load
                     try:
-                        mailto_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href^='mailto:']")
-                        for link in mailto_links:
-                            href = link.get_attribute("href")
-                            if href and href.startswith("mailto:"):
-                                email = href.replace("mailto:", "").split("?")[0].strip()
-                                if email and '@' in email and email not in all_emails:
-                                    email_lower = email.lower()
-                                    if not any(pattern in email_lower for pattern in exclude_patterns):
-                                        all_emails.append(email)
+                        WebDriverWait(self.driver, 5).until(
+                            lambda d: d.execute_script('return document.readyState') == 'complete'
+                        )
                     except:
                         pass
                     
-                    # Extract social media links from website
+                    # Get page source (includes JavaScript-rendered content)
+                    page_source = self.driver.page_source
+                    
+                    # Also get text content from visible elements (catches JavaScript-rendered emails)
+                    try:
+                        body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                        page_source += " " + body_text
+                    except:
+                        pass
+                    
+                    # Multiple email patterns for better detection
+                    email_patterns = [
+                        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # Standard email
+                        r'[a-zA-Z0-9._%+-]+\[?@\]?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # Email with [at] protection
+                        r'[a-zA-Z0-9._%+-]+\s*\(at\)\s*[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',  # Email with (at) protection
+                        r'[a-zA-Z0-9._%+-]+\s*at\s*[a-zA-Z0-9.-]+\s*dot\s*[a-zA-Z]{2,}',  # Email with "at" and "dot"
+                        r'[a-zA-Z0-9._%+-]+\s*\[at\]\s*[a-zA-Z0-9.-]+\s*\[dot\]\s*[a-zA-Z]{2,}',  # Email with [at] and [dot]
+                    ]
+                    
+                    for pattern in email_patterns:
+                        email_matches = re.findall(pattern, page_source, re.IGNORECASE)
+                        for email in email_matches:
+                            # Clean email (remove [at] and (at) replacements)
+                            email = email.replace('[at]', '@').replace('(at)', '@').replace(' at ', '@')
+                            email = email.replace('[dot]', '.').replace('(dot)', '.').replace(' dot ', '.')
+                            email = email.strip()
+                            
+                            # Validate email format
+                            if not re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$', email):
+                                continue
+                            
+                            email_lower = email.lower()
+                            # Skip if contains excluded patterns
+                            if any(pattern in email_lower for pattern in exclude_patterns):
+                                continue
+                            # Skip if too long (likely not a real email)
+                            if len(email) > 60:
+                                continue
+                            # Prefer emails from the same domain
+                            if domain and domain.lower() in email_lower:
+                                # Prioritize same-domain emails
+                                if email not in all_emails:
+                                    all_emails.insert(0, email)
+                            elif email not in all_emails:
+                                all_emails.append(email)
+                    
+                    # Also check for mailto links (more thorough)
+                    try:
+                        mailto_selectors = [
+                            "a[href^='mailto:']",
+                            "*[href^='mailto:']",
+                            "a[href*='mailto']",
+                            "*[href*='mailto']"
+                        ]
+                        for selector in mailto_selectors:
+                            mailto_links = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                            for link in mailto_links:
+                                href = link.get_attribute("href")
+                                if href and "mailto:" in href.lower():
+                                    email = href.split("mailto:")[-1].split("?")[0].split("&")[0].split("#")[0].strip()
+                                    if email and '@' in email:
+                                        # Validate
+                                        if re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$', email):
+                                            email_lower = email.lower()
+                                            if not any(pattern in email_lower for pattern in exclude_patterns):
+                                                if domain and domain.lower() in email_lower:
+                                                    if email not in all_emails:
+                                                        all_emails.insert(0, email)
+                                                elif email not in all_emails:
+                                                    all_emails.append(email)
+                    except:
+                        pass
+                    
+                    # Check text content of elements that might contain emails
+                    try:
+                        # Check footer, contact sections
+                        contact_selectors = [
+                            "footer", "[class*='contact']", "[id*='contact']",
+                            "[class*='footer']", "[id*='footer']", "[class*='email']", "[id*='email']"
+                        ]
+                        for selector in contact_selectors:
+                            try:
+                                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                                for elem in elements:
+                                    text = elem.text
+                                    if text:
+                                        email_matches = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
+                                        for email in email_matches:
+                                            email_lower = email.lower()
+                                            if not any(pattern in email_lower for pattern in exclude_patterns):
+                                                if domain and domain.lower() in email_lower:
+                                                    if email not in all_emails:
+                                                        all_emails.insert(0, email)
+                                                elif email not in all_emails:
+                                                    all_emails.append(email)
+                            except:
+                                continue
+                    except:
+                        pass
+                    
+                    # Extract social media links from website (enhanced)
                     try:
                         page_social_links = self._extract_social_media_links(page_source)
                         # Merge with existing social links (website links take priority)
@@ -1063,9 +1228,10 @@ class GoogleMapsScraper:
                     except Exception as e:
                         print(f"  Error extracting social links from website: {str(e)}")
                     
-                    # If we found emails, we can stop trying other pages (but continue collecting social links)
-                    if all_emails and any(website_social_links.values()):
-                        break
+                    # If we found good emails and social links, we can stop
+                    if all_emails and domain and any(domain.lower() in e.lower() for e in all_emails[:3]):
+                        if any(website_social_links.values()):
+                            break
                     
                     # Close tab before trying next page
                     if len(self.driver.window_handles) > 1:
@@ -1096,11 +1262,34 @@ class GoogleMapsScraper:
             # Return best email found and social media links
             email_result = None
             if all_emails:
-                # Prefer emails that look more business-like
-                business_keywords = ['info', 'contact', 'hello', 'support', 'sales', 'admin', 'business', 'office', 'inquiry', 'enquiry']
-                business_emails = [e for e in all_emails if any(x in e.lower() for x in business_keywords)]
-                if business_emails:
+                # Prioritize: 1) Same domain emails, 2) Business-like emails, 3) First found
+                same_domain_emails = []
+                business_emails = []
+                other_emails = []
+                
+                business_keywords = ['info', 'contact', 'hello', 'support', 'sales', 'admin', 'business', 'office', 'inquiry', 'enquiry', 'help', 'service']
+                
+                for email in all_emails:
+                    email_lower = email.lower()
+                    # Check if same domain
+                    if domain and domain.lower() in email_lower:
+                        if any(x in email_lower.split('@')[0] for x in business_keywords):
+                            same_domain_emails.insert(0, email)  # Business emails from same domain first
+                        else:
+                            same_domain_emails.append(email)
+                    # Check if business-like
+                    elif any(x in email_lower.split('@')[0] for x in business_keywords):
+                        business_emails.append(email)
+                    else:
+                        other_emails.append(email)
+                
+                # Priority order: same domain business > same domain > business > other
+                if same_domain_emails:
+                    email_result = same_domain_emails[0]
+                elif business_emails:
                     email_result = business_emails[0]
+                elif other_emails:
+                    email_result = other_emails[0]
                 else:
                     email_result = all_emails[0]
             
@@ -1130,6 +1319,7 @@ class GoogleMapsScraper:
     def _extract_social_media_links(self, page_source: str) -> Dict[str, Optional[str]]:
         """
         Extract social media links from page source and visible links.
+        Enhanced with better detection patterns and multiple extraction methods.
         
         Args:
             page_source: HTML page source to search
@@ -1147,46 +1337,105 @@ class GoogleMapsScraper:
         }
         
         try:
-            # Find all links on the page
-            all_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href]")
+            # Find all links on the page (multiple selectors for better coverage)
+            link_selectors = [
+                "a[href]",
+                "a[href*='facebook']",
+                "a[href*='instagram']",
+                "a[href*='linkedin']",
+                "a[href*='twitter']",
+                "a[href*='x.com']",
+                "a[href*='youtube']",
+                "a[href*='tiktok']",
+                "*[href*='facebook']",
+                "*[href*='instagram']",
+                "*[href*='linkedin']",
+                "*[href*='twitter']",
+                "*[href*='x.com']",
+                "*[href*='youtube']",
+                "*[href*='tiktok']"
+            ]
             
-            # Patterns for social media URLs
+            all_links = []
+            for selector in link_selectors:
+                try:
+                    links = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    all_links.extend(links)
+                except:
+                    continue
+            
+            # Also check data attributes and other attributes that might contain social links
+            try:
+                # Check for social media icons/buttons
+                social_elements = self.driver.find_elements(By.CSS_SELECTOR, 
+                    "[class*='facebook'], [class*='instagram'], [class*='linkedin'], [class*='twitter'], [class*='youtube'], [class*='tiktok'], "
+                    "[id*='facebook'], [id*='instagram'], [id*='linkedin'], [id*='twitter'], [id*='youtube'], [id*='tiktok']"
+                )
+                for elem in social_elements:
+                    # Check various attributes
+                    for attr in ['href', 'data-href', 'data-url', 'data-link', 'onclick']:
+                        try:
+                            value = elem.get_attribute(attr)
+                            if value and any(platform in value.lower() for platform in ['facebook', 'instagram', 'linkedin', 'twitter', 'x.com', 'youtube', 'tiktok']):
+                                all_links.append(elem)
+                        except:
+                            continue
+            except:
+                pass
+            
+            # Enhanced patterns for social media URLs (more comprehensive)
             patterns = {
                 "facebook": [
-                    r'https?://(?:www\.)?(?:facebook\.com|fb\.com)/[^\s<>"{}|\\^`\[\]]+',
-                    r'https?://(?:www\.)?facebook\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'fb\.com/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?(?:facebook\.com|fb\.com)/(?:pages?/)?[^\s<>"{}|\\^`\[\]?&]+',
+                    r'https?://(?:www\.)?facebook\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'fb\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'facebook\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'/(?:pages?/)?[a-zA-Z0-9._-]+',  # Relative Facebook URLs
                 ],
                 "instagram": [
-                    r'https?://(?:www\.)?instagram\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'instagram\.com/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?instagram\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'instagram\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'instagr\.am/[^\s<>"{}|\\^`\[\]?&]+',
                 ],
                 "linkedin": [
-                    r'https?://(?:www\.)?linkedin\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'linkedin\.com/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?linkedin\.com/(?:company|in|pub|profile)/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'https?://(?:www\.)?linkedin\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'linkedin\.com/[^\s<>"{}|\\^`\[\]?&]+',
                 ],
                 "twitter": [
-                    r'https?://(?:www\.)?(?:twitter\.com|x\.com)/[^\s<>"{}|\\^`\[\]]+',
-                    r'twitter\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'x\.com/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?(?:twitter\.com|x\.com)/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'twitter\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'x\.com/[^\s<>"{}|\\^`\[\]?&]+',
                 ],
                 "youtube": [
-                    r'https?://(?:www\.)?(?:youtube\.com|youtu\.be)/[^\s<>"{}|\\^`\[\]]+',
-                    r'youtube\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'youtu\.be/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?(?:youtube\.com/(?:channel|c|user|@)|youtu\.be)/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'https?://(?:www\.)?youtube\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'youtube\.com/[^\s<>"{}|\\^`\[\]?&]+',
+                    r'youtu\.be/[^\s<>"{}|\\^`\[\]?&]+',
                 ],
                 "tiktok": [
-                    r'https?://(?:www\.)?tiktok\.com/[^\s<>"{}|\\^`\[\]]+',
-                    r'tiktok\.com/[^\s<>"{}|\\^`\[\]]+'
+                    r'https?://(?:www\.)?tiktok\.com/@?[^\s<>"{}|\\^`\[\]?&]+',
+                    r'tiktok\.com/@?[^\s<>"{}|\\^`\[\]?&]+',
                 ]
             }
             
             # Extract from visible links
             for link in all_links:
                 try:
-                    href = link.get_attribute("href")
+                    # Check multiple attributes
+                    href = link.get_attribute("href") or link.get_attribute("data-href") or link.get_attribute("data-url") or link.get_attribute("data-link")
                     if not href:
-                        continue
+                        # Check onclick attribute
+                        onclick = link.get_attribute("onclick")
+                        if onclick:
+                            # Extract URL from onclick
+                            url_match = re.search(r'https?://[^\s\'"<>]+', onclick)
+                            if url_match:
+                                href = url_match.group(0)
+                            else:
+                                continue
+                        else:
+                            continue
                     
                     href_lower = href.lower()
                     
@@ -1198,29 +1447,59 @@ class GoogleMapsScraper:
                                 if match:
                                     # Clean up the URL
                                     url = match.group(0)
-                                    # Remove query parameters and fragments for cleaner URLs
+                                    # Remove query parameters and fragments for cleaner URLs (but keep path)
                                     url = url.split('?')[0].split('#')[0]
                                     # Ensure it starts with http
                                     if not url.startswith('http'):
                                         url = 'https://' + url
-                                    social_links[platform] = url
-                                    break
+                                    # Validate it's a proper social media URL
+                                    if any(domain in url.lower() for domain in [
+                                        'facebook.com', 'fb.com', 'instagram.com', 'linkedin.com',
+                                        'twitter.com', 'x.com', 'youtube.com', 'youtu.be', 'tiktok.com'
+                                    ]):
+                                        social_links[platform] = url
+                                        break
                 except Exception:
                     continue
             
-            # Also search in page source for any missed links
+            # Also search in page source for any missed links (more thorough)
             for platform, platform_patterns in patterns.items():
                 if not social_links[platform]:  # Only if not found in visible links
                     for pattern in platform_patterns:
                         matches = re.findall(pattern, page_source, re.IGNORECASE)
                         if matches:
+                            for match in matches:
+                                url = match
+                                # Clean up the URL
+                                url = url.split('?')[0].split('#')[0]
+                                if not url.startswith('http'):
+                                    url = 'https://' + url
+                                # Validate it's a proper social media URL
+                                if any(domain in url.lower() for domain in [
+                                    'facebook.com', 'fb.com', 'instagram.com', 'linkedin.com',
+                                    'twitter.com', 'x.com', 'youtube.com', 'youtu.be', 'tiktok.com'
+                                ]):
+                                    social_links[platform] = url
+                                    break
+                            if social_links[platform]:
+                                break
+            
+            # Also check text content for social media mentions
+            try:
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+                for platform in ['facebook', 'instagram', 'linkedin', 'twitter', 'youtube', 'tiktok']:
+                    if not social_links[platform]:
+                        # Look for platform mentions followed by URLs
+                        pattern = rf'{platform}\.com/[^\s]+'
+                        matches = re.findall(pattern, body_text, re.IGNORECASE)
+                        if matches:
                             url = matches[0]
-                            # Clean up the URL
-                            url = url.split('?')[0].split('#')[0]
                             if not url.startswith('http'):
                                 url = 'https://' + url
+                            url = url.split('?')[0].split('#')[0]
                             social_links[platform] = url
-                            break
+            except:
+                pass
             
         except Exception as e:
             print(f"Error in _extract_social_media_links: {str(e)}")
@@ -1310,6 +1589,9 @@ def export_leads_to_csv(results: List[Dict[str, Optional[str]]], filename: str =
     results = calculate_lead_quality(results)
     
     # Define CSV headers (CRM-friendly format)
+    # Check if batch processing fields exist
+    has_batch_fields = any(result.get('search_keyword') for result in results)
+    
     fieldnames = [
         "Company Name", "Address", "Phone", "Email", "Website",
         "Category", "Rating", "Reviews Count", "Business Hours",
@@ -1317,13 +1599,18 @@ def export_leads_to_csv(results: List[Dict[str, Optional[str]]], filename: str =
         "Lead Score", "Lead Status", "Lead Source", "Data Completeness"
     ]
     
+    # Add batch processing fields if they exist
+    if has_batch_fields:
+        fieldnames.insert(1, "Search Keyword")
+        fieldnames.insert(2, "Search Location")
+    
     # Write to CSV
     with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         
         for result in results:
-            writer.writerow({
+            row_data = {
                 "Company Name": result.get('name', ''),
                 "Address": result.get('address', ''),
                 "Phone": result.get('phone', ''),
@@ -1344,7 +1631,14 @@ def export_leads_to_csv(results: List[Dict[str, Optional[str]]], filename: str =
                 "Lead Status": result.get('lead_status', 'New'),
                 "Lead Source": result.get('lead_source', 'Google Maps'),
                 "Data Completeness": result.get('data_completeness', '0%')
-            })
+            }
+            
+            # Add batch processing fields if they exist
+            if has_batch_fields:
+                row_data["Search Keyword"] = result.get('search_keyword', '')
+                row_data["Search Location"] = result.get('search_location', '')
+            
+            writer.writerow(row_data)
     
     print(f"Leads exported to CSV: {filepath}")
 
@@ -1381,11 +1675,19 @@ def export_to_excel(results: List[Dict[str, Optional[str]]], filename: str = "go
     # Calculate lead quality
     results = calculate_lead_quality(results)
     
+    # Check if batch processing fields exist
+    has_batch_fields = any(result.get('search_keyword') for result in results)
+    
     # Define headers (including lead generation fields)
     headers = ["Name", "Address", "Phone", "Email", "Website", "Category", 
                "Rating", "Reviews Count", "Business Hours", 
                "Facebook", "Instagram", "LinkedIn", "Twitter", "YouTube", "TikTok", "Social Media Links",
                "Lead Score", "Lead Status", "Lead Source", "Data Completeness"]
+    
+    # Add batch processing fields if they exist
+    if has_batch_fields:
+        headers.insert(1, "Search Keyword")
+        headers.insert(2, "Search Location")
     
     # Write headers
     for col_num, header in enumerate(headers, 1):
@@ -1396,26 +1698,54 @@ def export_to_excel(results: List[Dict[str, Optional[str]]], filename: str = "go
     
     # Write data
     for row_num, result in enumerate(results, 2):
-        ws.cell(row=row_num, column=1, value=result.get('name', ''))
-        ws.cell(row=row_num, column=2, value=result.get('address', ''))
-        ws.cell(row=row_num, column=3, value=result.get('phone', ''))
-        ws.cell(row=row_num, column=4, value=result.get('email', ''))
-        ws.cell(row=row_num, column=5, value=result.get('website', ''))
-        ws.cell(row=row_num, column=6, value=result.get('category', ''))
-        ws.cell(row=row_num, column=7, value=result.get('rating', ''))
-        ws.cell(row=row_num, column=8, value=result.get('reviews_count', ''))
-        ws.cell(row=row_num, column=9, value=result.get('business_hours', ''))
-        ws.cell(row=row_num, column=10, value=result.get('facebook', ''))
-        ws.cell(row=row_num, column=11, value=result.get('instagram', ''))
-        ws.cell(row=row_num, column=12, value=result.get('linkedin', ''))
-        ws.cell(row=row_num, column=13, value=result.get('twitter', ''))
-        ws.cell(row=row_num, column=14, value=result.get('youtube', ''))
-        ws.cell(row=row_num, column=15, value=result.get('tiktok', ''))
-        ws.cell(row=row_num, column=16, value=result.get('social_media_links', ''))
-        ws.cell(row=row_num, column=17, value=result.get('lead_score', 0))
-        ws.cell(row=row_num, column=18, value=result.get('lead_status', 'New'))
-        ws.cell(row=row_num, column=19, value=result.get('lead_source', 'Google Maps'))
-        ws.cell(row=row_num, column=20, value=result.get('data_completeness', '0%'))
+        col = 1
+        ws.cell(row=row_num, column=col, value=result.get('name', ''))
+        col += 1
+        
+        # Add batch fields if they exist
+        if has_batch_fields:
+            ws.cell(row=row_num, column=col, value=result.get('search_keyword', ''))
+            col += 1
+            ws.cell(row=row_num, column=col, value=result.get('search_location', ''))
+            col += 1
+        
+        ws.cell(row=row_num, column=col, value=result.get('address', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('phone', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('email', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('website', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('category', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('rating', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('reviews_count', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('business_hours', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('facebook', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('instagram', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('linkedin', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('twitter', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('youtube', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('tiktok', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('social_media_links', ''))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('lead_score', 0))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('lead_status', 'New'))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('lead_source', 'Google Maps'))
+        col += 1
+        ws.cell(row=row_num, column=col, value=result.get('data_completeness', '0%'))
     
     # Auto-adjust column widths
     for col_num, header in enumerate(headers, 1):

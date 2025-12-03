@@ -23,6 +23,7 @@ args = [
     '--add-data=social_media_search_scraper.py;.',  # Include social media search scraper
     '--add-data=clay_like_enrichment.py;.',  # Include Clay-like enrichment
     '--add-data=clay_integration.py;.',  # Include Clay integration
+    '--add-data=influencer_discovery.py;.',  # Include influencer discovery (Modash-like)
     '--hidden-import=selenium',
     '--hidden-import=webdriver_manager',
     '--hidden-import=openpyxl',

@@ -325,6 +325,36 @@
         .web-params.active {
             display: block;
         }
+        
+        .tab-btn.active {
+            background: #667eea !important;
+            color: white !important;
+        }
+        
+        .tab-btn:not(.active) {
+            background: #ddd !important;
+            color: #333 !important;
+        }
+        
+        .file-upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-upload-area:hover {
+            background: #e7f3ff;
+            border-color: #764ba2;
+        }
+        
+        .file-upload-area.dragover {
+            background: #d4e9ff;
+            border-color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -335,6 +365,14 @@
         </div>
         
         <div class="content">
+            <!-- Tabs for Single vs Batch Processing -->
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #667eea;">
+                <button type="button" class="tab-btn active" id="singleTab" onclick="switchTab('single')" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">Single Search</button>
+                <button type="button" class="tab-btn" id="batchTab" onclick="switchTab('batch')" style="padding: 10px 20px; background: #ddd; color: #333; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">Batch Processing (Excel Upload)</button>
+            </div>
+            
+            <!-- Single Search Form -->
+            <div id="singleFormSection">
             <form id="scraperForm">
                 <div class="form-section">
                     <h2>Scraper Type</h2>
@@ -409,6 +447,95 @@
                     <button type="button" class="btn-success" id="refreshFilesBtn">Refresh Files</button>
                 </div>
             </form>
+            </div>
+            
+            <!-- Batch Processing Form -->
+            <div id="batchFormSection" style="display: none;">
+                <form id="batchForm" enctype="multipart/form-data">
+                    <div class="form-section">
+                        <h2>📁 Upload Excel/CSV File</h2>
+                        <p style="color: #666; margin-bottom: 15px;">
+                            Upload an Excel or CSV file with <strong>Keyword</strong> and <strong>Location</strong> columns.
+                            The system will process all pairs and merge results at the end.
+                        </p>
+                        <div class="form-group">
+                            <label for="batch_file">Select File (Excel .xlsx/.xls or CSV .csv):</label>
+                            <input type="file" id="batch_file" name="file" accept=".xlsx,.xls,.csv" required 
+                                   style="padding: 10px; border: 2px dashed #667eea; border-radius: 5px; width: 100%; cursor: pointer;">
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                File must contain columns: <strong>Keyword</strong> (required) and <strong>Location</strong> (optional)
+                            </small>
+                        </div>
+                        
+                        <div style="background: #e7f3ff; padding: 15px; border-radius: 5px; margin-top: 15px; border-left: 4px solid #667eea;">
+                            <strong>Example Excel Format:</strong>
+                            <table style="width: 100%; margin-top: 10px; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="background: #667eea; color: white;">
+                                        <th style="padding: 8px; border: 1px solid #ddd;">Keyword</th>
+                                        <th style="padding: 8px; border: 1px solid #ddd;">Location</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">medical stores</td>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">Lahore</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">restaurants</td>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">Karachi</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">software companies</td>
+                                        <td style="padding: 8px; border: 1px solid #ddd;">Islamabad</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h2>Batch Processing Options</h2>
+                        <div class="radio-group">
+                            <div class="radio-option">
+                                <input type="radio" id="batch_maps" name="batch_scraper_type" value="maps" checked>
+                                <label for="batch_maps">Google Maps Scraper</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" id="batch_web" name="batch_scraper_type" value="web">
+                                <label for="batch_web">Google Web Scraper</label>
+                            </div>
+                        </div>
+                        
+                        <div class="checkbox-group" style="margin-top: 20px;">
+                            <div class="checkbox-option">
+                                <input type="checkbox" id="batch_export_excel" name="batch_export_excel" checked>
+                                <label for="batch_export_excel">Export Merged Results to Excel</label>
+                            </div>
+                            <div class="checkbox-option">
+                                <input type="checkbox" id="batch_export_csv" name="batch_export_csv" checked>
+                                <label for="batch_export_csv">Export Merged Results to CSV</label>
+                            </div>
+                            <div class="checkbox-option">
+                                <input type="checkbox" id="batch_headless" name="batch_headless">
+                                <label for="batch_headless">Headless Mode (Hide Browser)</label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top: 20px;">
+                            <label for="batch_output_folder">Output Folder:</label>
+                            <input type="text" id="batch_output_folder" name="batch_output_folder" 
+                                   value="excel_results" placeholder="excel_results">
+                        </div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary" id="batchStartBtn">Start Batch Processing</button>
+                        <button type="button" class="btn-secondary" id="batchStopBtn" disabled>Stop</button>
+                        <button type="button" class="btn-success" id="refreshFilesBtn2">Refresh Files</button>
+                    </div>
+                </form>
+            </div>
             
             <div class="status-section">
                 <div class="status" id="statusText">Ready</div>
@@ -435,6 +562,21 @@
     
     <script>
         let statusCheckInterval = null;
+        
+        // Tab switching
+        function switchTab(tab) {
+            if (tab === 'single') {
+                document.getElementById('singleFormSection').style.display = 'block';
+                document.getElementById('batchFormSection').style.display = 'none';
+                document.getElementById('singleTab').classList.add('active');
+                document.getElementById('batchTab').classList.remove('active');
+            } else {
+                document.getElementById('singleFormSection').style.display = 'none';
+                document.getElementById('batchFormSection').style.display = 'block';
+                document.getElementById('batchTab').classList.add('active');
+                document.getElementById('singleTab').classList.remove('active');
+            }
+        }
         
         // Toggle web params visibility
         document.querySelectorAll('input[name="scraper_type"]').forEach(radio => {
@@ -488,21 +630,33 @@
             }
         });
         
-        // Status check
+        // Status check (handles both single and batch processing)
         function startStatusCheck() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            
             statusCheckInterval = setInterval(async () => {
                 try {
                     const response = await fetch('/api/status');
                     const status = await response.json();
                     
-                    document.getElementById('statusText').textContent = status.progress || 'Processing...';
+                    let statusText = status.progress || 'Processing...';
+                    // Show batch progress if available
+                    if (status.total_pairs && status.current_pair) {
+                        statusText = `Pair ${status.current_pair}/${status.total_pairs}: ${statusText}`;
+                    }
+                    
+                    document.getElementById('statusText').textContent = statusText;
                     document.getElementById('statusText').className = 'status ' + 
                         (status.is_running ? 'running' : (status.error ? 'error' : 'success'));
                     
                     if (!status.is_running) {
                         clearInterval(statusCheckInterval);
                         document.getElementById('startBtn').disabled = false;
+                        document.getElementById('batchStartBtn').disabled = false;
                         document.getElementById('stopBtn').disabled = true;
+                        document.getElementById('batchStopBtn').disabled = true;
                         document.getElementById('progressBar').classList.remove('active');
                         
                         if (status.error) {
@@ -536,17 +690,44 @@
                 const score = result.lead_score || 0;
                 const status = result.lead_status || 'N/A';
                 
+                // Social media links
+                const facebook = result.facebook || '';
+                const instagram = result.instagram || '';
+                const linkedin = result.linkedin || '';
+                const twitter = result.twitter || '';
+                const youtube = result.youtube || '';
+                const tiktok = result.tiktok || '';
+                
+                // Format email and website as clickable links
+                const emailLink = email !== 'N/A' && email ? `<a href="mailto:${email}" style="color: #667eea; text-decoration: none;">${email}</a>` : email;
+                const websiteLink = website !== 'N/A' && website ? `<a href="${website}" target="_blank" style="color: #667eea; text-decoration: none;">${website}</a>` : website;
+                
+                // Build social media links HTML
+                let socialLinksHtml = '';
+                if (facebook || instagram || linkedin || twitter || youtube || tiktok) {
+                    socialLinksHtml = '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #ddd;"><strong style="color: #667eea;">Social Media:</strong> ';
+                    const socialLinks = [];
+                    if (facebook) socialLinks.push(`<a href="${facebook}" target="_blank" style="color: #1877f2; text-decoration: none; margin-right: 10px;">📘 Facebook</a>`);
+                    if (instagram) socialLinks.push(`<a href="${instagram}" target="_blank" style="color: #e4405f; text-decoration: none; margin-right: 10px;">📷 Instagram</a>`);
+                    if (linkedin) socialLinks.push(`<a href="${linkedin}" target="_blank" style="color: #0077b5; text-decoration: none; margin-right: 10px;">💼 LinkedIn</a>`);
+                    if (twitter) socialLinks.push(`<a href="${twitter}" target="_blank" style="color: #1da1f2; text-decoration: none; margin-right: 10px;">🐦 Twitter</a>`);
+                    if (youtube) socialLinks.push(`<a href="${youtube}" target="_blank" style="color: #ff0000; text-decoration: none; margin-right: 10px;">📺 YouTube</a>`);
+                    if (tiktok) socialLinks.push(`<a href="${tiktok}" target="_blank" style="color: #000000; text-decoration: none; margin-right: 10px;">🎵 TikTok</a>`);
+                    socialLinksHtml += socialLinks.join('') + '</div>';
+                }
+                
                 return `
                     <div class="result-item">
                         <h3>${index + 1}. ${name}</h3>
                         <div class="result-details">
                             <div class="result-detail"><strong>Phone:</strong> ${phone}</div>
-                            <div class="result-detail"><strong>Email:</strong> ${email}</div>
+                            <div class="result-detail"><strong>Email:</strong> ${emailLink}</div>
                             <div class="result-detail"><strong>Address:</strong> ${address}</div>
-                            <div class="result-detail"><strong>Website:</strong> ${website}</div>
+                            <div class="result-detail"><strong>Website:</strong> ${websiteLink}</div>
                             <div class="result-detail"><strong>Lead Score:</strong> ${score}/100</div>
                             <div class="result-detail"><strong>Status:</strong> ${status}</div>
                         </div>
+                        ${socialLinksHtml}
                     </div>
                 `;
             }).join('');
@@ -587,6 +768,56 @@
         
         // Load files on page load
         loadFiles();
+        
+        // Batch form submission
+        document.getElementById('batchForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('batch_file');
+            
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('Please select a file to upload');
+                return;
+            }
+            
+            formData.append('file', fileInput.files[0]);
+            formData.append('scraper_type', document.querySelector('input[name="batch_scraper_type"]:checked').value);
+            formData.append('export_excel', document.getElementById('batch_export_excel').checked);
+            formData.append('export_csv', document.getElementById('batch_export_csv').checked);
+            formData.append('headless', document.getElementById('batch_headless').checked);
+            formData.append('output_folder', document.getElementById('batch_output_folder').value);
+            
+            try {
+                document.getElementById('batchStartBtn').disabled = true;
+                document.getElementById('batchStopBtn').disabled = false;
+                document.getElementById('progressBar').classList.add('active');
+                
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    startStatusCheck();
+                } else {
+                    alert('Error: ' + data.error);
+                    document.getElementById('batchStartBtn').disabled = false;
+                    document.getElementById('batchStopBtn').disabled = true;
+                    document.getElementById('progressBar').classList.remove('active');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                document.getElementById('batchStartBtn').disabled = false;
+                document.getElementById('batchStopBtn').disabled = true;
+                document.getElementById('progressBar').classList.remove('active');
+            }
+        });
+        
+        // Refresh files button for batch section
+        document.getElementById('refreshFilesBtn2').addEventListener('click', loadFiles);
     </script>
 </body>
 </html>

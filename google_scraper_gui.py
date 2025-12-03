@@ -30,6 +30,13 @@ except ImportError as e:
     print(f"Clay features import error: {e}")
     CLAY_FEATURES_AVAILABLE = False
 
+try:
+    from influencer_discovery import InfluencerDiscovery, export_influencers_to_excel
+    INFLUENCER_FEATURES_AVAILABLE = True
+except ImportError as e:
+    print(f"Influencer features import error: {e}")
+    INFLUENCER_FEATURES_AVAILABLE = False
+
 # License validation removed - app is now free to use
 
 
@@ -85,6 +92,12 @@ class GoogleScraperApp:
             self.audiences_frame = ttk.Frame(self.notebook, padding="10")
             self.notebook.add(self.audiences_frame, text="👥 Audiences")
             self.create_audiences_tab()
+        
+        # Tab 5: Influencer Discovery (Modash-like)
+        if INFLUENCER_FEATURES_AVAILABLE:
+            self.influencer_frame = ttk.Frame(self.notebook, padding="10")
+            self.notebook.add(self.influencer_frame, text="⭐ Influencer Discovery")
+            self.create_influencer_tab()
         
         # Configure root grid
         self.root.columnconfigure(0, weight=1)
@@ -357,6 +370,281 @@ class GoogleScraperApp:
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(3, weight=1)
         criteria_frame.columnconfigure(1, weight=1)
+    
+    def create_influencer_tab(self):
+        """Create the influencer discovery tab (Modash-like)."""
+        main_frame = self.influencer_frame
+        
+        title_label = ttk.Label(main_frame, text="Influencer Discovery & Analytics (Modash-like)", 
+                                font=("Arial", 14, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
+        
+        # Platform selection
+        platform_frame = ttk.LabelFrame(main_frame, text="Platform", padding="10")
+        platform_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.influencer_platform = tk.StringVar(value="instagram")
+        ttk.Radiobutton(platform_frame, text="Instagram", 
+                       variable=self.influencer_platform, value="instagram").grid(row=0, column=0, padx=10)
+        ttk.Radiobutton(platform_frame, text="TikTok", 
+                       variable=self.influencer_platform, value="tiktok").grid(row=0, column=1, padx=10)
+        ttk.Radiobutton(platform_frame, text="YouTube", 
+                       variable=self.influencer_platform, value="youtube").grid(row=0, column=2, padx=10)
+        
+        # Search parameters
+        search_frame = ttk.LabelFrame(main_frame, text="Search Parameters", padding="10")
+        search_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(search_frame, text="Niche/Category:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.influencer_niche = ttk.Entry(search_frame, width=40)
+        self.influencer_niche.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        self.influencer_niche.insert(0, "fitness")
+        
+        ttk.Label(search_frame, text="Location (optional):").grid(row=1, column=0, sticky=tk.W, pady=5)
+        self.influencer_location = ttk.Entry(search_frame, width=40)
+        self.influencer_location.grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        
+        # Filters
+        filters_frame = ttk.LabelFrame(main_frame, text="Filters", padding="10")
+        filters_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        ttk.Label(filters_frame, text="Min Followers:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.min_followers = ttk.Entry(filters_frame, width=15)
+        self.min_followers.grid(row=0, column=1, padx=5)
+        self.min_followers.insert(0, "1000")
+        
+        ttk.Label(filters_frame, text="Max Followers:").grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.max_followers = ttk.Entry(filters_frame, width=15)
+        self.max_followers.grid(row=0, column=3, padx=5)
+        self.max_followers.insert(0, "1000000")
+        
+        ttk.Label(filters_frame, text="Max Results:").grid(row=0, column=4, sticky=tk.W, padx=5)
+        self.influencer_max_results = ttk.Entry(filters_frame, width=15)
+        self.influencer_max_results.grid(row=0, column=5, padx=5)
+        self.influencer_max_results.insert(0, "20")
+        
+        # Options
+        options_frame = ttk.LabelFrame(main_frame, text="Options", padding="10")
+        options_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        self.influencer_headless = tk.BooleanVar(value=False)
+        ttk.Checkbutton(options_frame, text="Headless Mode (Hide Browser)", 
+                       variable=self.influencer_headless).grid(row=0, column=0, padx=10)
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
+        
+        self.discover_button = ttk.Button(button_frame, text="Discover Influencers", 
+                                         command=self.start_influencer_discovery, width=25)
+        self.discover_button.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Button(button_frame, text="Stop", 
+                  command=self.stop_influencer_discovery, 
+                  state=tk.DISABLED, width=20).pack(side=tk.LEFT, padx=5)
+        
+        # Progress bar
+        self.influencer_progress = ttk.Progressbar(main_frame, mode='indeterminate')
+        self.influencer_progress.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        
+        # Status
+        self.influencer_status = ttk.Label(main_frame, text="Ready", foreground="green")
+        self.influencer_status.grid(row=7, column=0, columnspan=2, pady=5)
+        
+        # Results
+        results_frame = ttk.LabelFrame(main_frame, text="Discovery Results", padding="10")
+        results_frame.grid(row=8, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=5)
+        
+        self.influencer_log = scrolledtext.ScrolledText(results_frame, height=20, width=80)
+        self.influencer_log.pack(fill=tk.BOTH, expand=True)
+        
+        # Configure grid
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.rowconfigure(8, weight=1)
+        search_frame.columnconfigure(1, weight=1)
+    
+    def start_influencer_discovery(self):
+        """Start influencer discovery."""
+        if not INFLUENCER_FEATURES_AVAILABLE:
+            messagebox.showerror("Error", "Influencer discovery features not available!")
+            return
+        
+        niche = self.influencer_niche.get().strip()
+        if not niche:
+            messagebox.showerror("Error", "Please enter a niche/category!")
+            return
+        
+        location = self.influencer_location.get().strip() or None
+        platform = self.influencer_platform.get()
+        
+        try:
+            min_followers = int(self.min_followers.get().strip()) if self.min_followers.get().strip() else None
+            max_followers = int(self.max_followers.get().strip()) if self.max_followers.get().strip() else None
+            max_results = int(self.influencer_max_results.get().strip() or "20")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter valid numbers for filters!")
+            return
+        
+        self.influencer_log.delete(1.0, tk.END)
+        self.influencer_progress.start()
+        self.discover_button.config(state=tk.DISABLED)
+        self.influencer_status.config(text="Discovering influencers...", foreground="blue")
+        
+        # Start in thread
+        thread = threading.Thread(
+            target=self.run_influencer_discovery,
+            args=(platform, niche, location, min_followers, max_followers, max_results),
+            daemon=True
+        )
+        thread.start()
+    
+    def run_influencer_discovery(self, platform, niche, location, min_followers, max_followers, max_results):
+        """Run influencer discovery in background thread with enhanced logging (from test script)."""
+        scraper = None
+        try:
+            # Initialize scraper
+            self.influencer_log.insert(tk.END, "=" * 60 + "\n")
+            self.influencer_log.insert(tk.END, f"Influencer Discovery - {platform.capitalize()}\n")
+            self.influencer_log.insert(tk.END, "=" * 60 + "\n")
+            self.influencer_log.insert(tk.END, "\n1. Initializing scraper...\n")
+            self.root.update()
+            
+            scraper = InfluencerDiscovery(headless=self.influencer_headless.get())
+            self.influencer_log.insert(tk.END, "   ✓ Scraper initialized successfully\n")
+            self.root.update()
+            
+            # Start discovery
+            self.influencer_log.insert(tk.END, f"\n2. Starting {platform.capitalize()} discovery...\n")
+            self.influencer_log.insert(tk.END, f"   Niche: {niche}\n")
+            if location:
+                self.influencer_log.insert(tk.END, f"   Location: {location}\n")
+            if min_followers:
+                self.influencer_log.insert(tk.END, f"   Min Followers: {min_followers:,}\n")
+            if max_followers:
+                self.influencer_log.insert(tk.END, f"   Max Followers: {max_followers:,}\n")
+            self.influencer_log.insert(tk.END, f"   Max Results: {max_results}\n")
+            self.influencer_log.insert(tk.END, "-" * 50 + "\n")
+            self.root.update()
+            
+            # Run discovery
+            if platform == "instagram":
+                results = scraper.discover_instagram_creators(
+                    niche=niche,
+                    location=location,
+                    min_followers=min_followers,
+                    max_followers=max_followers,
+                    max_results=max_results
+                )
+            elif platform == "tiktok":
+                results = scraper.discover_tiktok_creators(
+                    niche=niche,
+                    location=location,
+                    min_followers=min_followers,
+                    max_followers=max_followers,
+                    max_results=max_results
+                )
+            elif platform == "youtube":
+                results = scraper.discover_youtube_creators(
+                    niche=niche,
+                    location=location,
+                    min_followers=min_followers,
+                    max_followers=max_followers,
+                    max_results=max_results
+                )
+            else:
+                results = []
+            
+            # Discovery completed
+            self.influencer_log.insert(tk.END, f"\n3. Discovery completed!\n")
+            self.influencer_log.insert(tk.END, f"   Found {len(results)} creators\n")
+            self.root.update()
+            
+            if results:
+                # Show detailed results (like test script)
+                self.influencer_log.insert(tk.END, "\n4. Results:\n")
+                self.root.update()
+                
+                # Show first 20 results in detail
+                for i, creator in enumerate(results[:20], 1):
+                    self.influencer_log.insert(tk.END, f"\n   Creator {i}:\n")
+                    for key, value in creator.items():
+                        if value and key not in ['scraped_at']:  # Skip timestamp in display
+                            # Format the value nicely
+                            if isinstance(value, list):
+                                value_str = ', '.join(str(v) for v in value[:5])  # Show first 5 items
+                                if len(value) > 5:
+                                    value_str += f" ... (+{len(value) - 5} more)"
+                            else:
+                                value_str = str(value)
+                            
+                            # Truncate long values
+                            if len(value_str) > 100:
+                                value_str = value_str[:100] + "..."
+                            
+                            self.influencer_log.insert(tk.END, f"     {key}: {value_str}\n")
+                    
+                    # Update UI periodically
+                    if i % 5 == 0:
+                        self.root.update()
+                
+                if len(results) > 20:
+                    self.influencer_log.insert(tk.END, f"\n   ... and {len(results) - 20} more creators (see Excel file for full details)\n")
+                
+                # Export to Excel with timestamp (like test script)
+                self.influencer_log.insert(tk.END, "\n5. Exporting to Excel...\n")
+                self.root.update()
+                
+                from datetime import datetime
+                output_folder = self.output_folder.get().strip() if hasattr(self, 'output_folder') else "excel_results"
+                safe_niche = "".join(c for c in niche if c.isalnum() or c in (' ', '-', '_')).strip()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                excel_filename = f"{platform}_{safe_niche}_influencers_{timestamp}.xlsx"
+                
+                export_influencers_to_excel(results, excel_filename, output_folder)
+                
+                self.influencer_log.insert(tk.END, f"   ✓ Exported successfully to {excel_filename}\n")
+                self.influencer_log.insert(tk.END, "\n" + "=" * 60 + "\n")
+                self.influencer_log.insert(tk.END, "Discovery completed successfully!\n")
+                self.influencer_log.insert(tk.END, "=" * 60 + "\n")
+                
+                self.influencer_status.config(text=f"Completed! Found {len(results)} influencers", foreground="green")
+                messagebox.showinfo(
+                    "Success", 
+                    f"Influencer discovery completed!\n\n"
+                    f"Found {len(results)} influencers.\n\n"
+                    f"Saved to: {output_folder}/{excel_filename}"
+                )
+            else:
+                self.influencer_log.insert(tk.END, "\n   ⚠ No results found\n")
+                self.influencer_log.insert(tk.END, "\n" + "=" * 60 + "\n")
+                self.influencer_status.config(text="No results found", foreground="orange")
+                messagebox.showwarning("No Results", "No influencers found for the given criteria.")
+                
+        except Exception as e:
+            import traceback
+            error_msg = f"Error during influencer discovery: {str(e)}"
+            self.influencer_log.insert(tk.END, f"\n✗ ERROR: {error_msg}\n")
+            self.influencer_log.insert(tk.END, "\nFull traceback:\n")
+            self.influencer_log.insert(tk.END, traceback.format_exc())
+            self.influencer_log.insert(tk.END, "\n" + "=" * 60 + "\n")
+            self.influencer_status.config(text="Error occurred", foreground="red")
+            messagebox.showerror("Error", f"{error_msg}\n\nCheck the log for details.")
+        finally:
+            if scraper:
+                self.influencer_log.insert(tk.END, "\n6. Closing scraper...\n")
+                self.root.update()
+                try:
+                    scraper.close()
+                    self.influencer_log.insert(tk.END, "   ✓ Scraper closed\n")
+                except:
+                    pass
+            
+            self.influencer_progress.stop()
+            self.discover_button.config(state=tk.NORMAL)
+    
+    def stop_influencer_discovery(self):
+        """Stop influencer discovery."""
+        self.influencer_status.config(text="Stopped", foreground="orange")
     
     def on_scraper_type_change(self):
         """Show/hide relevant parameter fields based on scraper type."""
