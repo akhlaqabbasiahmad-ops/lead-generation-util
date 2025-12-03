@@ -52,12 +52,15 @@ class EmailMarketing:
             Dictionary with connection status and message
         """
         try:
+            # Increase timeout for EC2/network issues
+            connection_timeout = 30  # 30 seconds instead of 10
+            
             if self.smtp_port == 465:
                 # SSL connection
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=10)
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=connection_timeout)
             else:
                 # TLS connection
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=10)
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=connection_timeout)
                 server.starttls()
             
             server.login(self.smtp_username, self.smtp_password)
@@ -68,10 +71,29 @@ class EmailMarketing:
                 'message': 'SMTP connection successful'
             }
         except Exception as e:
-            return {
-                'success': False,
-                'message': f'SMTP connection failed: {str(e)}'
-            }
+            error_msg = str(e)
+            
+            # Provide helpful error messages for common issues
+            if 'timed out' in error_msg.lower() or 'timeout' in error_msg.lower():
+                help_msg = (
+                    "Connection timed out. This usually means:\n"
+                    "1. AWS Security Group is blocking outbound SMTP ports\n"
+                    "2. Network ACLs are blocking outbound traffic\n"
+                    "3. Windows Firewall is blocking outbound connections\n\n"
+                    "Solution: Allow outbound ports 587, 465, and 25 in:\n"
+                    "- AWS Security Group (Outbound rules)\n"
+                    "- Windows Firewall (run fix_ec2_smtp.bat)"
+                )
+                return {
+                    'success': False,
+                    'message': f'SMTP connection failed: {error_msg}',
+                    'help': help_msg
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f'SMTP connection failed: {error_msg}'
+                }
     
     def send_email(self, to_email: str, subject: str, body_html: str, 
                    body_text: str = None, attachments: List[str] = None,
@@ -122,11 +144,13 @@ class EmailMarketing:
                             )
                             msg.attach(part)
             
-            # Send email
+            # Send email (increased timeout for EC2/network issues)
+            connection_timeout = 60  # 60 seconds for sending
+            
             if self.smtp_port == 465:
-                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=30)
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port, timeout=connection_timeout)
             else:
-                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30)
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=connection_timeout)
                 server.starttls()
             
             server.login(self.smtp_username, self.smtp_password)
