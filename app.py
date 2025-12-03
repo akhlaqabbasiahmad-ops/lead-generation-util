@@ -410,6 +410,13 @@ if __name__ == '__main__':
     print("\n⚠️  Note: Port 80 requires administrator/root privileges on most systems")
     print("   On Windows: Run as Administrator")
     print("   On Linux: Use 'sudo python app.py' or run as root")
+    print("\n📡 Public Access Information:")
+    print("   - Current IP (172.31.40.145) is a PRIVATE IP (local network only)")
+    print("   - To make it public, you need:")
+    print("     1. Get your PUBLIC IP address (run check_public_ip.bat)")
+    print("     2. Configure firewall/security group to allow port 80")
+    print("     3. Configure router port forwarding (if behind NAT)")
+    print("   - Then access via: http://YOUR_PUBLIC_IP")
     
     # In production, Gunicorn handles the app, so this only runs in development
     app.run(debug=DEBUG, host=HOST, port=PORT)
