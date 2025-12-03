@@ -43,8 +43,7 @@ if __name__ == '__main__':
             channel_timeout=CHANNEL_TIMEOUT,
             cleanup_interval=30,
             asyncore_use_poll=True,
-            connection_limit=100,
-            cleanup_interval_seconds=30
+            connection_limit=100
         )
     except KeyboardInterrupt:
         print("\nShutting down server...")
