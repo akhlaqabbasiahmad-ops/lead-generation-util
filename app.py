@@ -20,6 +20,14 @@ except ImportError as e:
     print(f"Import error: {e}")
     SCRAPERS_AVAILABLE = False
 
+# Import email marketing
+try:
+    from email_marketing import EmailMarketing, EmailTemplates
+    EMAIL_MARKETING_AVAILABLE = True
+except ImportError as e:
+    print(f"Email marketing import error: {e}")
+    EMAIL_MARKETING_AVAILABLE = False
+
 app = Flask(__name__)
 
 # Production-ready configuration
@@ -36,6 +44,14 @@ scraping_status = {
     'error': None,
     'current_pair': 0,
     'total_pairs': 0
+}
+
+# Store email sending status
+email_status = {
+    'is_sending': False,
+    'progress': '',
+    'results': None,
+    'error': None
 }
 
 # Allowed file extensions
@@ -385,6 +401,312 @@ def download_file(filename):
         return jsonify({'error': 'File not found'}), 404
 
 
+# ==================== Email Marketing Endpoints ====================
+
+@app.route('/api/email/save-config', methods=['POST'])
+def save_smtp_config():
+    """Save SMTP configuration"""
+    try:
+        data = request.json
+        config = {
+            'smtp_server': data.get('smtp_server'),
+            'smtp_port': data.get('smtp_port'),
+            'smtp_username': data.get('smtp_username'),
+            'from_email': data.get('from_email'),
+            'from_name': data.get('from_name'),
+            'saved_at': datetime.now().isoformat()
+        }
+        
+        # Save to file (password not saved for security)
+        config_file = 'email_config.json'
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        return jsonify({'success': True, 'message': 'SMTP configuration saved (password not saved for security)'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/email/load-config', methods=['GET'])
+def load_smtp_config():
+    """Load saved SMTP configuration"""
+    try:
+        config_file = 'email_config.json'
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            return jsonify({'success': True, 'config': config})
+        else:
+            return jsonify({'success': False, 'message': 'No saved configuration found'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/email/test-connection', methods=['POST'])
+def test_email_connection():
+    """Test SMTP connection"""
+    if not EMAIL_MARKETING_AVAILABLE:
+        return jsonify({'error': 'Email marketing module not available'}), 500
+    
+    data = request.json
+    email_marketing = EmailMarketing(
+        smtp_server=data.get('smtp_server'),
+        smtp_port=int(data.get('smtp_port', 587)),
+        smtp_username=data.get('smtp_username'),
+        smtp_password=data.get('smtp_password'),
+        from_email=data.get('from_email'),
+        from_name=data.get('from_name')
+    )
+    
+    result = email_marketing.test_connection()
+    return jsonify(result)
+
+
+@app.route('/api/email/templates', methods=['GET'])
+def get_email_templates():
+    """Get available email templates"""
+    if not EMAIL_MARKETING_AVAILABLE:
+        return jsonify({'error': 'Email marketing module not available'}), 500
+    
+    templates = {
+        'intro': EmailTemplates.get_template('intro'),
+        'followup': EmailTemplates.get_template('followup'),
+        'partnership': EmailTemplates.get_template('partnership'),
+        'custom': EmailTemplates.get_template('custom')
+    }
+    
+    return jsonify({'templates': templates})
+
+
+@app.route('/api/email/send', methods=['POST'])
+def send_email():
+    """Send email to leads"""
+    global email_status
+    
+    if not EMAIL_MARKETING_AVAILABLE:
+        return jsonify({'error': 'Email marketing module not available'}), 500
+    
+    if email_status['is_sending']:
+        return jsonify({'error': 'Email sending is already in progress'}), 400
+    
+    data = request.json
+    
+    # Get SMTP configuration
+    smtp_config = {
+        'smtp_server': data.get('smtp_server'),
+        'smtp_port': int(data.get('smtp_port', 587)),
+        'smtp_username': data.get('smtp_username'),
+        'smtp_password': data.get('smtp_password'),
+        'from_email': data.get('from_email'),
+        'from_name': data.get('from_name', 'Google Business Scraper')
+    }
+    
+    # Get email content
+    template_name = data.get('template', 'custom')
+    subject = data.get('subject', '')
+    body_html = data.get('body_html', '')
+    body_text = data.get('body_text', '')
+    
+    # Get leads (from file or provided data)
+    leads_source = data.get('leads_source', 'file')  # 'file' or 'data'
+    leads_file = data.get('leads_file')
+    leads_data = data.get('leads', [])
+    
+    # Initialize email status
+    email_status = {
+        'is_sending': True,
+        'progress': 'Starting email campaign...',
+        'results': None,
+        'error': None
+    }
+    
+    # Start email sending in background thread
+    thread = threading.Thread(
+        target=run_email_campaign,
+        args=(smtp_config, template_name, subject, body_html, body_text, leads_source, leads_file, leads_data),
+        daemon=True
+    )
+    thread.start()
+    
+    return jsonify({'message': 'Email campaign started', 'status': 'sending'})
+
+
+def run_email_campaign(smtp_config, template_name, subject, body_html, body_text, 
+                       leads_source, leads_file, leads_data):
+    """Run email campaign in background"""
+    global email_status
+    
+    try:
+        # Initialize email marketing
+        email_marketing = EmailMarketing(**smtp_config)
+        
+        # Get leads
+        if leads_source == 'file' and leads_file:
+            # Load leads from file
+            filepath = os.path.join('excel_results', leads_file)
+            if filepath.endswith('.csv'):
+                df = pd.read_csv(filepath)
+            else:
+                df = pd.read_excel(filepath)
+            
+            leads = df.to_dict('records')
+        elif leads_source == 'data' and leads_data:
+            # Use provided leads data (selected recipients)
+            leads = leads_data
+        else:
+            # Use provided leads data (fallback)
+            leads = leads_data if leads_data else []
+        
+        # Get template if using predefined template
+        if template_name != 'custom':
+            template = EmailTemplates.get_template(template_name)
+            if not subject:
+                subject = template['subject']
+            if not body_html:
+                body_html = template['html']
+            if not body_text:
+                body_text = template['text']
+        
+        # Add sender name to templates
+        sender_name = smtp_config.get('from_name', 'Google Business Scraper')
+        body_html = body_html.replace('{sender_name}', sender_name)
+        if body_text:
+            body_text = body_text.replace('{sender_name}', sender_name)
+        
+        # Send emails
+        email_status['progress'] = f'Sending emails to {len(leads)} leads...'
+        result = email_marketing.send_to_leads(
+            leads=leads,
+            subject_template=subject,
+            body_html_template=body_html,
+            body_text_template=body_text
+        )
+        
+        email_status['progress'] = f'Completed! Sent {result.get("successful", 0)} emails successfully'
+        email_status['results'] = result
+        email_status['is_sending'] = False
+        
+    except Exception as e:
+        email_status['error'] = str(e)
+        email_status['progress'] = f'Error: {str(e)}'
+        email_status['is_sending'] = False
+
+
+@app.route('/api/email/status', methods=['GET'])
+def get_email_status():
+    """Get email sending status"""
+    return jsonify(email_status)
+
+
+@app.route('/api/email/get-recipients', methods=['GET'])
+def get_recipients_from_file():
+    """Get list of recipients from a file"""
+    if not EMAIL_MARKETING_AVAILABLE:
+        return jsonify({'error': 'Email marketing module not available'}), 500
+    
+    filename = request.args.get('file')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    
+    try:
+        filepath = os.path.join('excel_results', filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 404
+        
+        # Read file
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath)
+        else:
+            df = pd.read_excel(filepath)
+        
+        # Find email column (case-insensitive)
+        email_col = None
+        name_col = None
+        company_col = None
+        phone_col = None
+        address_col = None
+        website_col = None
+        
+        for col in df.columns:
+            col_lower = str(col).lower().strip()
+            if 'email' in col_lower and email_col is None:
+                email_col = col
+            if ('name' in col_lower or 'company' in col_lower) and name_col is None:
+                name_col = col
+            if 'company' in col_lower and company_col is None:
+                company_col = col
+            if 'phone' in col_lower and phone_col is None:
+                phone_col = col
+            if 'address' in col_lower and address_col is None:
+                address_col = col
+            if 'website' in col_lower and website_col is None:
+                website_col = col
+        
+        if not email_col:
+            return jsonify({'error': 'No email column found in file'}), 400
+        
+        # Extract recipients
+        recipients = []
+        for idx, row in df.iterrows():
+            email = str(row[email_col]).strip() if pd.notna(row[email_col]) else ''
+            
+            if email and email != 'N/A' and '@' in email:
+                recipient = {
+                    'email': email,
+                    'name': str(row[name_col]).strip() if name_col and pd.notna(row[name_col]) else '',
+                    'company': str(row[company_col]).strip() if company_col and pd.notna(row[company_col]) else (str(row[name_col]).strip() if name_col and pd.notna(row[name_col]) else ''),
+                    'phone': str(row[phone_col]).strip() if phone_col and pd.notna(row[phone_col]) else '',
+                    'address': str(row[address_col]).strip() if address_col and pd.notna(row[address_col]) else '',
+                    'website': str(row[website_col]).strip() if website_col and pd.notna(row[website_col]) else ''
+                }
+                recipients.append(recipient)
+        
+        return jsonify({
+            'success': True,
+            'recipients': recipients,
+            'total': len(recipients)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Error reading file: {str(e)}'}), 500
+
+
+@app.route('/api/email/send-test', methods=['POST'])
+def send_test_email():
+    """Send a test email"""
+    if not EMAIL_MARKETING_AVAILABLE:
+        return jsonify({'error': 'Email marketing module not available'}), 500
+    
+    data = request.json
+    test_email = data.get('test_email')
+    
+    if not test_email:
+        return jsonify({'error': 'Test email address required'}), 400
+    
+    email_marketing = EmailMarketing(
+        smtp_server=data.get('smtp_server'),
+        smtp_port=int(data.get('smtp_port', 587)),
+        smtp_username=data.get('smtp_username'),
+        smtp_password=data.get('smtp_password'),
+        from_email=data.get('from_email'),
+        from_name=data.get('from_name', 'Google Business Scraper')
+    )
+    
+    subject = data.get('subject', 'Test Email from Google Business Scraper')
+    body_html = data.get('body_html', '<p>This is a test email.</p>')
+    body_text = data.get('body_text', 'This is a test email.')
+    
+    result = email_marketing.send_email(
+        to_email=test_email,
+        subject=subject,
+        body_html=body_html,
+        body_text=body_text
+    )
+    
+    return jsonify(result)
+
+
 if __name__ == '__main__':
     # Create necessary folders if they don't exist
     if not os.path.exists('excel_results'):
@@ -400,7 +722,7 @@ if __name__ == '__main__':
     import os
     DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     HOST = os.getenv('FLASK_HOST', '0.0.0.0')  # Listen on all interfaces for server access
-    PORT = int(os.getenv('FLASK_PORT', 80))  # Default to port 80 for server
+    PORT = int(os.getenv('FLASK_PORT', 5000))  # Default to port 5000 (can be changed via environment variable)
     
     print("Starting Google Business Scraper Web Application...")
     print(f"Debug mode: {DEBUG}")

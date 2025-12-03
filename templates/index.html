@@ -355,6 +355,58 @@
             background: #d4e9ff;
             border-color: #667eea;
         }
+        
+        .recipient-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            transition: all 0.2s;
+        }
+        
+        .recipient-item:hover {
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+        
+        .recipient-item.selected {
+            background: #e7f3ff;
+            border-color: #667eea;
+        }
+        
+        .recipient-checkbox {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            margin-right: 12px;
+        }
+        
+        .recipient-info {
+            flex: 1;
+        }
+        
+        .recipient-email {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .recipient-details {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .manual-badge {
+            background: #28a745;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
     </style>
 </head>
 <body>
@@ -365,10 +417,11 @@
         </div>
         
         <div class="content">
-            <!-- Tabs for Single vs Batch Processing -->
+            <!-- Tabs for Single vs Batch Processing vs Email Marketing -->
             <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #667eea;">
                 <button type="button" class="tab-btn active" id="singleTab" onclick="switchTab('single')" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">Single Search</button>
-                <button type="button" class="tab-btn" id="batchTab" onclick="switchTab('batch')" style="padding: 10px 20px; background: #ddd; color: #333; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">Batch Processing (Excel Upload)</button>
+                <button type="button" class="tab-btn" id="batchTab" onclick="switchTab('batch')" style="padding: 10px 20px; background: #ddd; color: #333; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">Batch Processing</button>
+                <button type="button" class="tab-btn" id="emailTab" onclick="switchTab('email')" style="padding: 10px 20px; background: #ddd; color: #333; border: none; border-radius: 5px 5px 0 0; cursor: pointer; font-weight: 600;">📧 Email Marketing</button>
             </div>
             
             <!-- Single Search Form -->
@@ -537,6 +590,180 @@
                 </form>
             </div>
             
+            <!-- Email Marketing Form -->
+            <div id="emailFormSection" style="display: none;">
+                <form id="emailForm">
+                    <div class="form-section">
+                        <h2>📧 Email Marketing Configuration</h2>
+                        <p style="color: #666; margin-bottom: 15px;">
+                            Configure SMTP settings and send emails to your scraped leads.
+                        </p>
+                        
+                        <div class="form-group">
+                            <label for="smtp_preset">Quick Setup (Select Provider):</label>
+                            <select id="smtp_preset" name="smtp_preset" onchange="applySMTPPreset()" style="width: 100%; padding: 12px; margin-bottom: 15px;">
+                                <option value="">-- Select SMTP Provider --</option>
+                                <option value="gmail">Gmail</option>
+                                <option value="outlook">Outlook / Office 365</option>
+                                <option value="yahoo">Yahoo Mail</option>
+                                <option value="custom">Custom SMTP</option>
+                            </select>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                            <button type="button" class="btn-secondary" onclick="loadSavedConfig()" style="padding: 8px 15px; font-size: 14px;">💾 Load Saved</button>
+                            <button type="button" class="btn-secondary" onclick="saveCurrentConfig()" style="padding: 8px 15px; font-size: 14px;">💾 Save Config</button>
+                            <button type="button" class="btn-secondary" onclick="clearConfig()" style="padding: 8px 15px; font-size: 14px; background: #dc3545; color: white;">🗑️ Clear</button>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="smtp_server">SMTP Server:</label>
+                            <input type="text" id="smtp_server" name="smtp_server" 
+                                   placeholder="e.g., smtp.gmail.com" value="smtp.gmail.com" required>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="smtp_port">SMTP Port:</label>
+                                <select id="smtp_port" name="smtp_port" required>
+                                    <option value="587" selected>TLS (587) - Recommended</option>
+                                    <option value="465">SSL (465)</option>
+                                    <option value="25">Plain (25)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="smtp_username">SMTP Username/Email:</label>
+                                <input type="email" id="smtp_username" name="smtp_username" 
+                                       placeholder="your-email@gmail.com" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="smtp_password">SMTP Password/App Password:</label>
+                            <input type="password" id="smtp_password" name="smtp_password" 
+                                   placeholder="Your email password or app password" required>
+                            <div id="smtpPresetNote" style="display: none; margin-top: 5px; padding: 8px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 3px; color: #856404; font-size: 0.9em;">
+                            </div>
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                <strong>Security Note:</strong> Password is not saved. Enter it each time for security.
+                            </small>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label for="from_email">From Email:</label>
+                                <input type="email" id="from_email" name="from_email" 
+                                       placeholder="sender@example.com">
+                                <small style="color: #666;">Leave empty to use SMTP username</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="from_name">From Name:</label>
+                                <input type="text" id="from_name" name="from_name" 
+                                       placeholder="Your Company Name" value="Google Business Scraper">
+                            </div>
+                        </div>
+                        
+                        <div class="button-group" style="margin-top: 15px;">
+                            <button type="button" class="btn-secondary" id="testConnectionBtn">Test Connection</button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h2>📝 Email Content</h2>
+                        
+                        <div class="form-group">
+                            <label for="email_template">Email Template:</label>
+                            <select id="email_template" name="email_template" onchange="loadEmailTemplate()">
+                                <option value="custom">Custom Template</option>
+                                <option value="intro">Introduction Email</option>
+                                <option value="followup">Follow-up Email</option>
+                                <option value="partnership">Partnership Opportunity</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email_subject">Subject:</label>
+                            <input type="text" id="email_subject" name="email_subject" 
+                                   placeholder="Email subject line" required>
+                            <small style="color: #666;">Use {name}, {company}, {email} for personalization</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email_body_html">Email Body (HTML):</label>
+                            <textarea id="email_body_html" name="email_body_html" rows="10" 
+                                      placeholder="HTML email content..." required style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px; font-family: monospace;"></textarea>
+                            <small style="color: #666;">Use {name}, {company}, {email}, {phone}, {address}, {website} for personalization</small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="email_body_text">Email Body (Plain Text) - Optional:</label>
+                            <textarea id="email_body_text" name="email_body_text" rows="5" 
+                                      placeholder="Plain text version (optional)" style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 5px;"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h2>📋 Select Recipients</h2>
+                        
+                        <div class="form-group">
+                            <label for="leads_source">Load Leads From:</label>
+                            <select id="leads_source" name="leads_source" onchange="loadRecipientsList()">
+                                <option value="file">From Scraped File</option>
+                                <option value="current">Use Current Results</option>
+                                <option value="manual">Manual Entry</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" id="leadsFileGroup">
+                            <label for="leads_file">Select Leads File:</label>
+                            <select id="leads_file" name="leads_file" onchange="loadRecipientsList()" style="width: 100%; padding: 12px;">
+                                <option value="">Select a file...</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group" id="manualEmailGroup" style="display: none;">
+                            <label>Add Email Manually:</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="email" id="manual_email" placeholder="email@example.com" style="flex: 1; padding: 10px;">
+                                <input type="text" id="manual_name" placeholder="Name (optional)" style="flex: 1; padding: 10px;">
+                                <button type="button" class="btn-secondary" id="addManualEmailBtn" onclick="addManualEmail()">Add</button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="testEmailGroup" style="display: none;">
+                            <label for="test_email">Send Test Email To:</label>
+                            <input type="email" id="test_email" name="test_email" 
+                                   placeholder="your-email@example.com">
+                            <button type="button" class="btn-secondary" id="sendTestBtn" style="margin-top: 10px;">Send Test Email</button>
+                        </div>
+                        
+                        <div class="form-group" style="margin-top: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <label style="margin: 0;"><strong>Recipients List:</strong></label>
+                                <div>
+                                    <button type="button" class="btn-secondary" onclick="selectAllRecipients()" style="padding: 5px 15px; font-size: 14px; margin-right: 5px;">Select All</button>
+                                    <button type="button" class="btn-secondary" onclick="deselectAllRecipients()" style="padding: 5px 15px; font-size: 14px; margin-right: 5px;">Deselect All</button>
+                                    <button type="button" class="btn-secondary" onclick="removeSelectedRecipients()" style="padding: 5px 15px; font-size: 14px; background: #dc3545; color: white;">Remove Selected</button>
+                                </div>
+                            </div>
+                            <div id="recipientsList" style="max-height: 400px; overflow-y: auto; border: 2px solid #ddd; border-radius: 5px; padding: 10px; background: #f8f9fa;">
+                                <p style="color: #666; text-align: center; padding: 20px;">No recipients loaded. Select a file or add emails manually.</p>
+                            </div>
+                            <div style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 5px;">
+                                <strong>Selected:</strong> <span id="selectedCount">0</span> / <span id="totalCount">0</span> recipients
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button type="submit" class="btn-primary" id="sendEmailsBtn">Send Email Campaign</button>
+                        <button type="button" class="btn-secondary" id="emailStopBtn" disabled>Stop</button>
+                    </div>
+                </form>
+            </div>
+            
             <div class="status-section">
                 <div class="status" id="statusText">Ready</div>
                 <div class="progress-bar" id="progressBar">
@@ -565,16 +792,29 @@
         
         // Tab switching
         function switchTab(tab) {
+            // Hide all sections
+            document.getElementById('singleFormSection').style.display = 'none';
+            document.getElementById('batchFormSection').style.display = 'none';
+            document.getElementById('emailFormSection').style.display = 'none';
+            
+            // Remove active class from all tabs
+            document.getElementById('singleTab').classList.remove('active');
+            document.getElementById('batchTab').classList.remove('active');
+            document.getElementById('emailTab').classList.remove('active');
+            
+            // Show selected section and activate tab
             if (tab === 'single') {
                 document.getElementById('singleFormSection').style.display = 'block';
-                document.getElementById('batchFormSection').style.display = 'none';
                 document.getElementById('singleTab').classList.add('active');
-                document.getElementById('batchTab').classList.remove('active');
-            } else {
-                document.getElementById('singleFormSection').style.display = 'none';
+            } else if (tab === 'batch') {
                 document.getElementById('batchFormSection').style.display = 'block';
                 document.getElementById('batchTab').classList.add('active');
-                document.getElementById('singleTab').classList.remove('active');
+            } else if (tab === 'email') {
+                document.getElementById('emailFormSection').style.display = 'block';
+                document.getElementById('emailTab').classList.add('active');
+                loadLeadsFiles();
+                // Try to load saved config when switching to email tab
+                loadSavedConfig().catch(() => {}); // Silently fail if no config exists
             }
         }
         
@@ -818,6 +1058,560 @@
         
         // Refresh files button for batch section
         document.getElementById('refreshFilesBtn2').addEventListener('click', loadFiles);
+        
+        // ==================== Email Marketing Functions ====================
+        
+        // Load saved SMTP configuration
+        async function loadSavedConfig() {
+            try {
+                const response = await fetch('/api/email/load-config');
+                const data = await response.json();
+                
+                if (data.success && data.config) {
+                    const config = data.config;
+                    document.getElementById('smtp_server').value = config.smtp_server || 'smtp.gmail.com';
+                    document.getElementById('smtp_port').value = config.smtp_port || '587';
+                    document.getElementById('smtp_username').value = config.smtp_username || '';
+                    document.getElementById('from_email').value = config.from_email || '';
+                    document.getElementById('from_name').value = config.from_name || 'Google Business Scraper';
+                    
+                    alert('✅ Configuration loaded! (Note: Password not saved for security - enter it manually)');
+                } else {
+                    alert('No saved configuration found');
+                }
+            } catch (error) {
+                alert('Error loading configuration: ' + error.message);
+            }
+        }
+        
+        // Save current SMTP configuration
+        async function saveCurrentConfig() {
+            const config = {
+                smtp_server: document.getElementById('smtp_server').value,
+                smtp_port: document.getElementById('smtp_port').value,
+                smtp_username: document.getElementById('smtp_username').value,
+                from_email: document.getElementById('from_email').value,
+                from_name: document.getElementById('from_name').value
+            };
+            
+            try {
+                const response = await fetch('/api/email/save-config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ Configuration saved! (Password not saved for security)');
+                } else {
+                    alert('Error saving configuration: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // Apply SMTP preset
+        function applySMTPPreset() {
+            const preset = document.getElementById('smtp_preset').value;
+            
+            const presets = {
+                'gmail': {
+                    server: 'smtp.gmail.com',
+                    port: '587',
+                    note: 'Use App Password (not regular password). Get it from: https://myaccount.google.com/apppasswords'
+                },
+                'outlook': {
+                    server: 'smtp.office365.com',
+                    port: '587',
+                    note: 'Use your Outlook/Office 365 email and password'
+                },
+                'yahoo': {
+                    server: 'smtp.mail.yahoo.com',
+                    port: '587',
+                    note: 'Use App Password for Yahoo Mail'
+                },
+                'custom': {
+                    server: '',
+                    port: '587',
+                    note: 'Enter your custom SMTP settings'
+                }
+            };
+            
+            if (preset && presets[preset]) {
+                const config = presets[preset];
+                document.getElementById('smtp_server').value = config.server;
+                document.getElementById('smtp_port').value = config.port;
+                
+                // Show note if available
+                if (config.note) {
+                    const noteDiv = document.getElementById('smtpPresetNote');
+                    if (noteDiv) {
+                        noteDiv.textContent = config.note;
+                        noteDiv.style.display = 'block';
+                    }
+                }
+            }
+        }
+        
+        // Clear configuration
+        function clearConfig() {
+            if (confirm('Clear all SMTP configuration fields?')) {
+                document.getElementById('smtp_server').value = 'smtp.gmail.com';
+                document.getElementById('smtp_port').value = '587';
+                document.getElementById('smtp_username').value = '';
+                document.getElementById('smtp_password').value = '';
+                document.getElementById('from_email').value = '';
+                document.getElementById('from_name').value = 'Google Business Scraper';
+                document.getElementById('smtp_preset').value = '';
+                const noteDiv = document.getElementById('smtpPresetNote');
+                if (noteDiv) noteDiv.style.display = 'none';
+            }
+        }
+        
+        // Load leads files for email marketing
+        async function loadLeadsFiles() {
+            try {
+                const response = await fetch('/api/files');
+                const data = await response.json();
+                
+                const leadsFileSelect = document.getElementById('leads_file');
+                if (leadsFileSelect) {
+                    leadsFileSelect.innerHTML = '<option value="">Select a file...</option>';
+                    
+                    if (data.files && data.files.length > 0) {
+                        data.files.forEach(file => {
+                            if (file.name.endsWith('.xlsx') || file.name.endsWith('.csv')) {
+                                const option = document.createElement('option');
+                                option.value = file.name;
+                                option.textContent = file.name;
+                                leadsFileSelect.appendChild(option);
+                            }
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading leads files:', error);
+            }
+        }
+        
+        // Recipients list
+        let recipientsList = [];
+        
+        // Load recipients list
+        async function loadRecipientsList() {
+            const source = document.getElementById('leads_source').value;
+            const fileGroup = document.getElementById('leadsFileGroup');
+            const manualGroup = document.getElementById('manualEmailGroup');
+            const testGroup = document.getElementById('testEmailGroup');
+            
+            // Show/hide groups
+            if (source === 'file') {
+                fileGroup.style.display = 'block';
+                manualGroup.style.display = 'none';
+                testGroup.style.display = 'none';
+            } else if (source === 'manual') {
+                fileGroup.style.display = 'none';
+                manualGroup.style.display = 'block';
+                testGroup.style.display = 'none';
+            } else {
+                fileGroup.style.display = 'none';
+                manualGroup.style.display = 'none';
+                testGroup.style.display = 'block';
+            }
+            
+            // Load recipients
+            if (source === 'file') {
+                const fileName = document.getElementById('leads_file').value;
+                if (fileName) {
+                    await loadRecipientsFromFile(fileName);
+                } else {
+                    recipientsList = [];
+                    displayRecipientsList();
+                }
+            } else if (source === 'current') {
+                await loadRecipientsFromCurrent();
+            } else {
+                // Manual - keep existing list
+                displayRecipientsList();
+            }
+        }
+        
+        // Load recipients from file
+        async function loadRecipientsFromFile(fileName) {
+            try {
+                const response = await fetch(`/api/files`);
+                const data = await response.json();
+                
+                // For now, we'll need to parse the file on the server
+                // Let's create an endpoint to get emails from file
+                const fileResponse = await fetch(`/api/email/get-recipients?file=${encodeURIComponent(fileName)}`);
+                const fileData = await fileResponse.json();
+                
+                if (fileData.success && fileData.recipients) {
+                    recipientsList = fileData.recipients.map(r => ({...r, selected: true}));
+                    displayRecipientsList();
+                } else {
+                    alert('Error loading recipients: ' + (fileData.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading recipients from file:', error);
+                alert('Error loading recipients: ' + error.message);
+            }
+        }
+        
+        // Load recipients from current results
+        async function loadRecipientsFromCurrent() {
+            try {
+                const response = await fetch('/api/results');
+                const data = await response.json();
+                
+                recipientsList = [];
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(lead => {
+                        const email = lead.email || lead.Email;
+                        if (email && email !== 'N/A' && email.includes('@')) {
+                            recipientsList.push({
+                                email: email,
+                                name: lead.name || lead['Company Name'] || 'Business Owner',
+                                company: lead.name || lead['Company Name'] || '',
+                                phone: lead.phone || lead.Phone || '',
+                                address: lead.address || lead.Address || '',
+                                website: lead.website || lead.Website || '',
+                                selected: true
+                            });
+                        }
+                    });
+                }
+                displayRecipientsList();
+            } catch (error) {
+                console.error('Error loading current recipients:', error);
+            }
+        }
+        
+        // Add manual email
+        function addManualEmail() {
+            const email = document.getElementById('manual_email').value.trim();
+            const name = document.getElementById('manual_name').value.trim();
+            
+            if (!email || !email.includes('@')) {
+                alert('Please enter a valid email address');
+                return;
+            }
+            
+            // Check if email already exists
+            if (recipientsList.some(r => r.email.toLowerCase() === email.toLowerCase())) {
+                alert('This email is already in the list');
+                return;
+            }
+            
+            recipientsList.push({
+                email: email,
+                name: name || 'Manual Entry',
+                company: '',
+                phone: '',
+                address: '',
+                website: '',
+                selected: true,
+                manual: true
+            });
+            
+            document.getElementById('manual_email').value = '';
+            document.getElementById('manual_name').value = '';
+            displayRecipientsList();
+        }
+        
+        // Display recipients list
+        function displayRecipientsList() {
+            const container = document.getElementById('recipientsList');
+            const selectedCount = document.getElementById('selectedCount');
+            const totalCount = document.getElementById('totalCount');
+            
+            totalCount.textContent = recipientsList.length;
+            const selected = recipientsList.filter(r => r.selected).length;
+            selectedCount.textContent = selected;
+            
+            if (recipientsList.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">No recipients loaded. Select a file or add emails manually.</p>';
+                return;
+            }
+            
+            container.innerHTML = recipientsList.map((recipient, index) => {
+                const checked = recipient.selected ? 'checked' : '';
+                const selectedClass = recipient.selected ? 'selected' : '';
+                const manualBadge = recipient.manual ? '<span class="manual-badge">Manual</span>' : '';
+                
+                let details = [];
+                if (recipient.name && recipient.name !== recipient.email) details.push('Name: ' + recipient.name);
+                if (recipient.company) details.push('Company: ' + recipient.company);
+                if (recipient.phone) details.push('Phone: ' + recipient.phone);
+                
+                return `
+                    <div class="recipient-item ${selectedClass}">
+                        <input type="checkbox" class="recipient-checkbox" data-index="${index}" ${checked} 
+                               onchange="toggleRecipient(${index})">
+                        <div class="recipient-info">
+                            <div class="recipient-email">
+                                ${recipient.email}
+                                ${manualBadge}
+                            </div>
+                            ${details.length > 0 ? `<div class="recipient-details">${details.join(' | ')}</div>` : ''}
+                        </div>
+                        <button type="button" onclick="removeRecipient(${index})" 
+                                style="background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 3px; cursor: pointer; font-size: 12px; margin-left: 10px;">
+                            Remove
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Toggle recipient selection
+        function toggleRecipient(index) {
+            if (recipientsList[index]) {
+                recipientsList[index].selected = !recipientsList[index].selected;
+                displayRecipientsList();
+            }
+        }
+        
+        // Select all recipients
+        function selectAllRecipients() {
+            recipientsList.forEach(r => r.selected = true);
+            displayRecipientsList();
+        }
+        
+        // Deselect all recipients
+        function deselectAllRecipients() {
+            recipientsList.forEach(r => r.selected = false);
+            displayRecipientsList();
+        }
+        
+        // Remove selected recipients
+        function removeSelectedRecipients() {
+            if (confirm(`Remove ${recipientsList.filter(r => r.selected).length} selected recipient(s)?`)) {
+                recipientsList = recipientsList.filter(r => !r.selected);
+                displayRecipientsList();
+            }
+        }
+        
+        // Remove single recipient
+        function removeRecipient(index) {
+            recipientsList.splice(index, 1);
+            displayRecipientsList();
+        }
+        
+        // Load email template
+        async function loadEmailTemplate() {
+            const templateSelect = document.getElementById('email_template');
+            if (!templateSelect) return;
+            
+            const templateName = templateSelect.value;
+            if (templateName === 'custom') return;
+            
+            try {
+                const response = await fetch('/api/email/templates');
+                const data = await response.json();
+                
+                if (data.templates && data.templates[templateName]) {
+                    const template = data.templates[templateName];
+                    const subjectField = document.getElementById('email_subject');
+                    const htmlField = document.getElementById('email_body_html');
+                    const textField = document.getElementById('email_body_text');
+                    
+                    if (subjectField) subjectField.value = template.subject || '';
+                    if (htmlField) htmlField.value = template.html || '';
+                    if (textField) textField.value = template.text || '';
+                }
+            } catch (error) {
+                console.error('Error loading template:', error);
+            }
+        }
+        
+        // Test SMTP connection
+        const testConnectionBtn = document.getElementById('testConnectionBtn');
+        if (testConnectionBtn) {
+            testConnectionBtn.addEventListener('click', async function() {
+                const formData = {
+                    smtp_server: document.getElementById('smtp_server').value,
+                    smtp_port: document.getElementById('smtp_port').value,
+                    smtp_username: document.getElementById('smtp_username').value,
+                    smtp_password: document.getElementById('smtp_password').value,
+                    from_email: document.getElementById('from_email').value,
+                    from_name: document.getElementById('from_name').value
+                };
+                
+                try {
+                    this.disabled = true;
+                    this.textContent = 'Testing...';
+                    
+                    const response = await fetch('/api/email/test-connection', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert('✅ Connection successful!');
+                    } else {
+                        alert('❌ Connection failed: ' + result.message);
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                } finally {
+                    this.disabled = false;
+                    this.textContent = 'Test Connection';
+                }
+            });
+        }
+        
+        // Send test email
+        const sendTestBtn = document.getElementById('sendTestBtn');
+        if (sendTestBtn) {
+            sendTestBtn.addEventListener('click', async function() {
+                const testEmail = document.getElementById('test_email').value;
+                if (!testEmail) {
+                    alert('Please enter a test email address');
+                    return;
+                }
+                
+                const formData = {
+                    smtp_server: document.getElementById('smtp_server').value,
+                    smtp_port: document.getElementById('smtp_port').value,
+                    smtp_username: document.getElementById('smtp_username').value,
+                    smtp_password: document.getElementById('smtp_password').value,
+                    from_email: document.getElementById('from_email').value,
+                    from_name: document.getElementById('from_name').value,
+                    subject: document.getElementById('email_subject').value,
+                    body_html: document.getElementById('email_body_html').value,
+                    body_text: document.getElementById('email_body_text').value,
+                    test_email: testEmail
+                };
+                
+                try {
+                    this.disabled = true;
+                    this.textContent = 'Sending...';
+                    
+                    const response = await fetch('/api/email/send-test', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        alert('✅ Test email sent successfully to ' + testEmail);
+                    } else {
+                        alert('❌ Failed to send test email: ' + result.message);
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                } finally {
+                    this.disabled = false;
+                    this.textContent = 'Send Test Email';
+                }
+            });
+        }
+        
+        // Email form submission
+        const emailForm = document.getElementById('emailForm');
+        if (emailForm) {
+            emailForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                // Get only selected recipients
+                const selectedRecipients = recipientsList.filter(r => r.selected);
+                
+                if (selectedRecipients.length === 0) {
+                    alert('Please select at least one recipient');
+                    return;
+                }
+                
+                const formData = {
+                    smtp_server: document.getElementById('smtp_server').value,
+                    smtp_port: document.getElementById('smtp_port').value,
+                    smtp_username: document.getElementById('smtp_username').value,
+                    smtp_password: document.getElementById('smtp_password').value,
+                    from_email: document.getElementById('from_email').value,
+                    from_name: document.getElementById('from_name').value,
+                    template: document.getElementById('email_template').value,
+                    subject: document.getElementById('email_subject').value,
+                    body_html: document.getElementById('email_body_html').value,
+                    body_text: document.getElementById('email_body_text').value,
+                    leads_source: 'data',  // Use data source
+                    leads: selectedRecipients  // Send only selected recipients
+                };
+                
+                try {
+                    document.getElementById('sendEmailsBtn').disabled = true;
+                    const stopBtn = document.getElementById('emailStopBtn');
+                    if (stopBtn) stopBtn.disabled = false;
+                    document.getElementById('progressBar').classList.add('active');
+                    
+                    const response = await fetch('/api/email/send', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(formData)
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        startEmailStatusCheck();
+                    } else {
+                        alert('Error: ' + data.error);
+                        document.getElementById('sendEmailsBtn').disabled = false;
+                        if (stopBtn) stopBtn.disabled = true;
+                        document.getElementById('progressBar').classList.remove('active');
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                    document.getElementById('sendEmailsBtn').disabled = false;
+                    const stopBtn = document.getElementById('emailStopBtn');
+                    if (stopBtn) stopBtn.disabled = true;
+                    document.getElementById('progressBar').classList.remove('active');
+                }
+            });
+        }
+        
+        // Email status check
+        function startEmailStatusCheck() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            
+            statusCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/email/status');
+                    const status = await response.json();
+                    
+                    document.getElementById('statusText').textContent = status.progress || 'Sending emails...';
+                    document.getElementById('statusText').className = 'status ' + 
+                        (status.is_sending ? 'running' : (status.error ? 'error' : 'success'));
+                    
+                    if (!status.is_sending) {
+                        clearInterval(statusCheckInterval);
+                        document.getElementById('sendEmailsBtn').disabled = false;
+                        const stopBtn = document.getElementById('emailStopBtn');
+                        if (stopBtn) stopBtn.disabled = true;
+                        document.getElementById('progressBar').classList.remove('active');
+                        
+                        if (status.error) {
+                            alert('Error: ' + status.error);
+                        } else if (status.results) {
+                            const results = status.results;
+                            alert(`Email campaign completed!\n\nTotal: ${results.total}\nSuccessful: ${results.successful}\nFailed: ${results.failed}`);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Email status check error:', error);
+                }
+            }, 2000);
+        }
     </script>
 </body>
 </html>
