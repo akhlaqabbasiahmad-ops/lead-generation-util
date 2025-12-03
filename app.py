@@ -399,13 +399,17 @@ if __name__ == '__main__':
     # Production settings
     import os
     DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
-    HOST = os.getenv('FLASK_HOST', '127.0.0.1')  # Gunicorn will handle external access
-    PORT = int(os.getenv('FLASK_PORT', 5000))
+    HOST = os.getenv('FLASK_HOST', '0.0.0.0')  # Listen on all interfaces for server access
+    PORT = int(os.getenv('FLASK_PORT', 80))  # Default to port 80 for server
     
     print("Starting Google Business Scraper Web Application...")
     print(f"Debug mode: {DEBUG}")
-    print(f"Access the application at: http://{HOST}:{PORT}")
+    print(f"Server listening on: http://{HOST}:{PORT}")
+    print(f"Access the application at: http://localhost:{PORT} or http://<your-server-ip>:{PORT}")
     print("Press Ctrl+C to stop the server")
+    print("\n⚠️  Note: Port 80 requires administrator/root privileges on most systems")
+    print("   On Windows: Run as Administrator")
+    print("   On Linux: Use 'sudo python app.py' or run as root")
     
     # In production, Gunicorn handles the app, so this only runs in development
     app.run(debug=DEBUG, host=HOST, port=PORT)
