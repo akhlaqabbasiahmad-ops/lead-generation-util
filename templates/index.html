@@ -603,6 +603,7 @@
                             <label for="smtp_preset">Quick Setup (Select Provider):</label>
                             <select id="smtp_preset" name="smtp_preset" onchange="applySMTPPreset()" style="width: 100%; padding: 12px; margin-bottom: 15px;">
                                 <option value="">-- Select SMTP Provider --</option>
+                                <option value="aws_ses">AWS SES (Recommended for EC2)</option>
                                 <option value="gmail">Gmail</option>
                                 <option value="outlook">Outlook / Office 365</option>
                                 <option value="yahoo">Yahoo Mail</option>
@@ -1118,20 +1119,25 @@
             const preset = document.getElementById('smtp_preset').value;
             
             const presets = {
+                'aws_ses': {
+                    server: 'email-smtp.us-east-1.amazonaws.com',
+                    port: '587',
+                    note: 'AWS SES - Works natively on EC2! Get SMTP credentials from AWS SES Console. Change server if using different region (e.g., us-west-2, eu-west-1). See AWS_SES_SETUP.md for details.'
+                },
                 'gmail': {
                     server: 'smtp.gmail.com',
                     port: '587',
-                    note: 'Use App Password (not regular password). Get it from: https://myaccount.google.com/apppasswords'
+                    note: 'Use App Password (not regular password). Get it from: https://myaccount.google.com/apppasswords. Note: May not work on EC2 due to firewall/blocking.'
                 },
                 'outlook': {
                     server: 'smtp.office365.com',
                     port: '587',
-                    note: 'Use your Outlook/Office 365 email and password'
+                    note: 'Use your Outlook/Office 365 email and password. Note: May not work on EC2 due to firewall/blocking.'
                 },
                 'yahoo': {
                     server: 'smtp.mail.yahoo.com',
                     port: '587',
-                    note: 'Use App Password for Yahoo Mail'
+                    note: 'Use App Password for Yahoo Mail. Note: May not work on EC2 due to firewall/blocking.'
                 },
                 'custom': {
                     server: '',
@@ -1149,10 +1155,13 @@
                 if (config.note) {
                     const noteDiv = document.getElementById('smtpPresetNote');
                     if (noteDiv) {
-                        noteDiv.textContent = config.note;
+                        noteDiv.innerHTML = config.note.replace(/\n/g, '<br>');
                         noteDiv.style.display = 'block';
                     }
                 }
+            } else {
+                const noteDiv = document.getElementById('smtpPresetNote');
+                if (noteDiv) noteDiv.style.display = 'none';
             }
         }
         

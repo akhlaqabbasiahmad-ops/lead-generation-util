@@ -51,9 +51,52 @@ class EmailMarketing:
         Returns:
             Dictionary with connection status and message
         """
+        import socket
+        
         try:
-            # Increase timeout for EC2/network issues
-            connection_timeout = 30  # 30 seconds instead of 10
+            # First, test if we can resolve the hostname
+            try:
+                socket.gethostbyname(self.smtp_server)
+            except socket.gaierror:
+                return {
+                    'success': False,
+                    'message': f'Cannot resolve hostname: {self.smtp_server}',
+                    'help': 'Check if the SMTP server address is correct and DNS is working.'
+                }
+            
+            # Test if port is reachable
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(10)
+                result = sock.connect_ex((self.smtp_server, self.smtp_port))
+                sock.close()
+                
+                if result != 0:
+                    return {
+                        'success': False,
+                        'message': f'Cannot connect to {self.smtp_server}:{self.smtp_port}',
+                        'help': (
+                            f"Port {self.smtp_port} is not reachable. This usually means:\n"
+                            "1. AWS Security Group is blocking outbound SMTP ports\n"
+                            "2. Network ACLs are blocking outbound traffic\n"
+                            "3. Windows Firewall is blocking outbound connections\n"
+                            "4. The SMTP server may be blocking EC2 IP addresses\n\n"
+                            "Solutions:\n"
+                            "- Allow outbound ports 587, 465, 25 in AWS Security Group\n"
+                            "- Run fix_ec2_smtp.bat on the EC2 instance\n"
+                            "- Consider using AWS SES (Simple Email Service) instead\n"
+                            "- Try a different SMTP provider that allows EC2 connections"
+                        )
+                    }
+            except Exception as port_error:
+                return {
+                    'success': False,
+                    'message': f'Port test failed: {str(port_error)}',
+                    'help': 'Network connectivity issue. Check AWS Security Group and Windows Firewall.'
+                }
+            
+            # Now try SMTP connection
+            connection_timeout = 30  # 30 seconds
             
             if self.smtp_port == 465:
                 # SSL connection
@@ -70,19 +113,47 @@ class EmailMarketing:
                 'success': True,
                 'message': 'SMTP connection successful'
             }
+        except socket.timeout:
+            return {
+                'success': False,
+                'message': 'Connection timeout - server did not respond',
+                'help': (
+                    "Connection timed out. Possible causes:\n"
+                    "1. AWS Security Group blocking outbound SMTP (ports 587/465/25)\n"
+                    "2. Network ACLs blocking outbound traffic\n"
+                    "3. Windows Firewall blocking connections\n"
+                    "4. SMTP provider blocking EC2 IP addresses\n\n"
+                    "Quick Fix:\n"
+                    "1. AWS Console → EC2 → Security Groups → Your SG → Outbound Rules\n"
+                    "   Add: Custom TCP, Port 587, Destination 0.0.0.0/0\n"
+                    "2. Run fix_ec2_smtp.bat on EC2 instance (as Administrator)\n"
+                    "3. Consider using AWS SES instead of Gmail/Outlook"
+                )
+            }
         except Exception as e:
             error_msg = str(e)
             
             # Provide helpful error messages for common issues
-            if 'timed out' in error_msg.lower() or 'timeout' in error_msg.lower():
+            if '10060' in error_msg or 'timed out' in error_msg.lower() or 'timeout' in error_msg.lower():
                 help_msg = (
-                    "Connection timed out. This usually means:\n"
+                    "Connection timeout (WinError 10060). This means:\n"
                     "1. AWS Security Group is blocking outbound SMTP ports\n"
                     "2. Network ACLs are blocking outbound traffic\n"
-                    "3. Windows Firewall is blocking outbound connections\n\n"
-                    "Solution: Allow outbound ports 587, 465, and 25 in:\n"
-                    "- AWS Security Group (Outbound rules)\n"
-                    "- Windows Firewall (run fix_ec2_smtp.bat)"
+                    "3. Windows Firewall is blocking outbound connections\n"
+                    "4. SMTP provider may be blocking EC2 IP addresses\n\n"
+                    "SOLUTION - Do BOTH:\n"
+                    "A. AWS Security Group:\n"
+                    "   - Go to EC2 → Security Groups → Your SG\n"
+                    "   - Outbound Rules → Edit → Add Rule\n"
+                    "   - Type: Custom TCP, Port: 587, Destination: 0.0.0.0/0\n"
+                    "   - Save rules\n\n"
+                    "B. Windows Firewall (on EC2):\n"
+                    "   - Run fix_ec2_smtp.bat as Administrator\n"
+                    "   - Or manually allow ports 587, 465, 25\n\n"
+                    "ALTERNATIVE: Use AWS SES (Simple Email Service)\n"
+                    "   - Works natively on EC2\n"
+                    "   - No firewall issues\n"
+                    "   - Better deliverability"
                 )
                 return {
                     'success': False,
