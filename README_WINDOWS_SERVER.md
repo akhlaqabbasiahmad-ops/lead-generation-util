@@ -2,7 +2,23 @@
 
 ## Quick Start Commands
 
-### Option 1: Automated Setup (Recommended)
+### Option 1: Complete Automated Setup (Recommended - First Time)
+
+**Run as Administrator:**
+
+```cmd
+# Complete setup - checks Python, installs dependencies, starts server
+complete_setup.bat
+```
+
+This script will:
+1. ✅ Check if Python is installed
+2. ✅ Guide you to install Python if needed
+3. ✅ Install all dependencies
+4. ✅ Create required folders
+5. ✅ Start the server
+
+### Option 2: Standard Setup
 
 **Run as Administrator:**
 
@@ -33,16 +49,18 @@ cd "D:\my work place\GoogleMapData"
 pip install -r requirements.txt
 ```
 
-#### Step 4: Create Required Directories
+#### Step 5: Create Required Directories
 ```cmd
 mkdir excel_results
 mkdir uploads
 mkdir templates
 ```
 
-#### Step 5: Run on Port 80
+#### Step 6: Run on Port 80
 ```cmd
 python app.py
+# OR if using py launcher:
+py app.py
 ```
 
 ## Important Notes for Port 80
