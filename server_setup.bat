@@ -1,0 +1,69 @@
+@echo off
+REM Google Business Scraper - Windows Server Setup Script
+REM Run this script as Administrator to set up and start the application on port 80
+
+echo ==========================================
+echo Google Business Scraper - Server Setup
+echo ==========================================
+echo.
+
+REM Check for administrator privileges
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo ERROR: This script must be run as Administrator!
+    echo Right-click and select "Run as administrator"
+    pause
+    exit /b 1
+)
+
+REM Step 1: Install Python dependencies
+echo Step 1: Installing Python dependencies...
+pip install -r requirements.txt
+
+if %errorLevel% neq 0 (
+    echo Error: Failed to install dependencies
+    pause
+    exit /b 1
+)
+
+echo [OK] Dependencies installed successfully
+echo.
+
+REM Step 2: Create necessary directories
+echo Step 2: Creating necessary directories...
+if not exist "excel_results" mkdir excel_results
+if not exist "uploads" mkdir uploads
+if not exist "templates" mkdir templates
+
+echo [OK] Directories created
+echo.
+
+REM Step 3: Check if port 80 is available
+echo Step 3: Checking port 80 availability...
+netstat -ano | findstr ":80 " >nul
+if %errorLevel% equ 0 (
+    echo [WARNING] Port 80 is already in use
+    echo You may need to stop IIS or another web server
+    echo.
+    netstat -ano | findstr ":80 "
+    echo.
+    pause
+)
+
+REM Step 4: Start the application on port 80
+echo.
+echo Step 4: Starting application on port 80...
+echo ==========================================
+echo Server will be accessible at:
+echo   - http://localhost
+echo   - http://your-server-ip
+echo.
+echo Press Ctrl+C to stop the server
+echo ==========================================
+echo.
+
+REM Run the application
+python app.py
+
+pause
+
