@@ -18,13 +18,57 @@ if %errorLevel% neq 0 (
 
 REM Step 1: Install Python dependencies
 echo Step 1: Installing Python dependencies...
-pip install -r requirements.txt
 
-if %errorLevel% neq 0 (
-    echo Error: Failed to install dependencies
-    pause
-    exit /b 1
+REM Try different pip commands (Windows can have different Python installations)
+echo Checking for Python and pip...
+
+REM Check Python version
+python --version >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Found: python
+    python -m pip install -r requirements.txt
+    if %errorLevel% equ 0 goto :deps_installed
 )
+
+REM Try py launcher
+py --version >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Found: py launcher
+    py -m pip install -r requirements.txt
+    if %errorLevel% equ 0 goto :deps_installed
+)
+
+REM Try pip directly
+pip --version >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Found: pip
+    pip install -r requirements.txt
+    if %errorLevel% equ 0 goto :deps_installed
+)
+
+REM Try pip3
+pip3 --version >nul 2>&1
+if %errorLevel% equ 0 (
+    echo Found: pip3
+    pip3 install -r requirements.txt
+    if %errorLevel% equ 0 goto :deps_installed
+)
+
+echo.
+echo ERROR: Could not find Python or pip!
+echo.
+echo Please ensure Python is installed and in your PATH.
+echo You can download Python from: https://www.python.org/downloads/
+echo.
+echo Or try running manually:
+echo   python -m pip install -r requirements.txt
+echo   OR
+echo   py -m pip install -r requirements.txt
+echo.
+pause
+exit /b 1
+
+:deps_installed
 
 echo [OK] Dependencies installed successfully
 echo.
@@ -62,8 +106,25 @@ echo Press Ctrl+C to stop the server
 echo ==========================================
 echo.
 
-REM Run the application
-python app.py
+REM Try different Python commands
+python --version >nul 2>&1
+if %errorLevel% equ 0 (
+    python app.py
+    goto :end
+)
+
+py --version >nul 2>&1
+if %errorLevel% equ 0 (
+    py app.py
+    goto :end
+)
+
+echo ERROR: Could not find Python!
+echo Please ensure Python is installed.
+pause
+exit /b 1
+
+:end
 
 pause
 
