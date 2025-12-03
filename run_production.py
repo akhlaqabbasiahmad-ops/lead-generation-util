@@ -14,7 +14,7 @@ from app import app
 
 # Production configuration from environment variables
 HOST = os.getenv('FLASK_HOST', '0.0.0.0')
-PORT = int(os.getenv('FLASK_PORT', 80))
+PORT = int(os.getenv('FLASK_PORT', 5000))
 THREADS = int(os.getenv('WAITRESS_THREADS', 4))
 CHANNEL_TIMEOUT = int(os.getenv('WAITRESS_CHANNEL_TIMEOUT', 300))  # 5 minutes for long scrapes
 
